@@ -1,13 +1,3 @@
-extern crate curl;
-extern crate flate2;
-extern crate fs2;
-extern crate rand;
-#[macro_use]
-extern crate serde_json;
-extern crate tar;
-extern crate toml;
-extern crate xz2;
-
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -531,7 +521,7 @@ upload-addr = \"{}/{}\"
     }
 
     fn invalidate_cloudfront(&mut self) {
-        let json = json!({
+        let json = serde_json::json!({
             "Paths": {
                 "Items": [
                     "/dist/channel*",
