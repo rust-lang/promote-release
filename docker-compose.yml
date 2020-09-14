@@ -1,0 +1,27 @@
+---
+version: '3'
+
+services:
+  minio:
+    image: minio/minio
+    command: minio server /data
+    ports:
+      - 9000:9000
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ACCESS_KEY: access_key
+      MINIO_SECRET_KEY: secret_key
+
+  local:
+    build: local
+    depends_on:
+      - minio
+    command: /src/local/idle.sh
+    volumes:
+      - .:/src
+      - local-data:/persistent
+
+volumes:
+  minio-data: {}
+  local-data: {}
