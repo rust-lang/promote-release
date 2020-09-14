@@ -12,7 +12,7 @@ struct Context {
     work: PathBuf,
     release: String,
     handle: Easy,
-    secrets: toml::Value,
+    secrets: DistConfig,
     date: String,
     current_version: Option<String>,
 }
@@ -26,7 +26,7 @@ fn main() -> Result<(), Error> {
     Context {
         work: env::current_dir()?.join(env::args_os().nth(1).unwrap()),
         release: env::args().nth(2).unwrap(),
-        secrets: secrets.parse()?,
+        secrets: toml::from_str::<Config>(&secrets)?.dist,
         handle: Easy::new(),
         date: output(Command::new("date").arg("+%Y-%m-%d"))?
             .trim()
@@ -195,9 +195,9 @@ gpg-password-file = \"{}\"
 upload-addr = \"{}/{}\"
 ",
             self.dl_dir().display(),
-            self.secrets["dist"]["gpg-password-file"].as_str().unwrap(),
-            self.secrets["dist"]["upload-addr"].as_str().unwrap(),
-            self.secrets["dist"]["upload-dir"].as_str().unwrap()
+            self.secrets.gpg_password_file,
+            self.secrets.upload_addr,
+            self.secrets.upload_dir,
         ));
         std::fs::write(&path, new_config.as_bytes())?;
 
@@ -387,8 +387,8 @@ upload-addr = \"{}/{}\"
     }
 
     fn publish_archive(&mut self) -> Result<(), Error> {
-        let bucket = self.secrets["dist"]["upload-bucket"].as_str().unwrap();
-        let dir = self.secrets["dist"]["upload-dir"].as_str().unwrap();
+        let bucket = &self.secrets.upload_bucket;
+        let dir = &self.secrets.upload_dir;
         let dst = format!("s3://{}/{}/{}/", bucket, dir, self.date);
         run(self
             .aws_s3()
@@ -473,7 +473,7 @@ upload-addr = \"{}/{}\"
         }
 
         // Upload this to `/doc/$channel`
-        let bucket = self.secrets["dist"]["upload-bucket"].as_str().unwrap();
+        let bucket = &self.secrets.upload_bucket;
         let dst = format!("s3://{}/doc/{}/", bucket, upload_dir);
         run(self
             .aws_s3()
@@ -501,9 +501,7 @@ upload-addr = \"{}/{}\"
     }
 
     fn invalidate_docs(&self, dir: &str) -> Result<(), Error> {
-        let distribution_id = self.secrets["dist"]["rustdoc-cf-distribution-id"]
-            .as_str()
-            .unwrap();
+        let distribution_id = &self.secrets.rustdoc_cf_distribution_id;
         let mut cmd = Command::new("aws");
         self.aws_creds(&mut cmd);
         cmd.arg("cloudfront")
@@ -519,8 +517,8 @@ upload-addr = \"{}/{}\"
     }
 
     fn publish_release(&mut self) -> Result<(), Error> {
-        let bucket = self.secrets["dist"]["upload-bucket"].as_str().unwrap();
-        let dir = self.secrets["dist"]["upload-dir"].as_str().unwrap();
+        let bucket = &self.secrets.upload_bucket;
+        let dir = &self.secrets.upload_dir;
         let dst = format!("s3://{}/{}/", bucket, dir);
         run(self
             .aws_s3()
@@ -548,9 +546,7 @@ upload-addr = \"{}/{}\"
         let dst = self.work.join("payload.json");
         std::fs::write(&dst, json.as_bytes())?;
 
-        let distribution_id = self.secrets["dist"]["cloudfront-distribution-id"]
-            .as_str()
-            .unwrap();
+        let distribution_id = &self.secrets.cloudfront_distribution_id;
         let mut cmd = Command::new("aws");
         self.aws_creds(&mut cmd);
         run(cmd
@@ -584,16 +580,14 @@ upload-addr = \"{}/{}\"
     }
 
     fn aws_creds(&self, cmd: &mut Command) {
-        let access = self.secrets["dist"]["aws-access-key-id"].as_str().unwrap();
-        let secret = self.secrets["dist"]["aws-secret-key"].as_str().unwrap();
-        cmd.env("AWS_ACCESS_KEY_ID", &access)
-            .env("AWS_SECRET_ACCESS_KEY", &secret);
+        cmd.env("AWS_ACCESS_KEY_ID", &self.secrets.aws_access_key_id)
+            .env("AWS_SECRET_ACCESS_KEY", &self.secrets.aws_secret_key);
     }
 
     fn download_manifest(&mut self) -> Result<toml::Value, Error> {
         self.handle.get(true)?;
-        let addr = self.secrets["dist"]["upload-addr"].as_str().unwrap();
-        let upload_dir = self.secrets["dist"]["upload-dir"].as_str().unwrap();
+        let addr = &self.secrets.upload_addr;
+        let upload_dir = &self.secrets.upload_dir;
         let url = format!("{}/{}/channel-rust-{}.toml", addr, upload_dir, self.release);
         println!("downloading manifest from: {}", url);
         self.handle.url(&url)?;
@@ -635,4 +629,49 @@ fn output(cmd: &mut Command) -> Result<String, Error> {
     }
 
     Ok(String::from_utf8(output.stdout)?)
+}
+
+#[derive(serde::Deserialize)]
+struct Config {
+    dist: DistConfig,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct DistConfig {
+    /// Path to the file containing the password of the gpg key.
+    gpg_password_file: String,
+
+    /// Remote HTTP host artifacts will be uploaded to. Note that this is *not* the same as what's
+    /// configured in `config.toml` for rustbuild, it's just the *host* that we're uploading to and
+    /// going to be looking at urls from.
+    ///
+    /// This is used in a number of places such as:
+    ///
+    /// * Downloading manifestss
+    /// * Urls in manifests
+    ///
+    /// and possibly more. Note that most urls end up appending `upload-dir` below to this address
+    /// specified. This address should not have a trailing slash.
+    upload_addr: String,
+
+    /// The S3 bucket that release artifacts will be uploaded to.
+    upload_bucket: String,
+    /// The S3 directory that release artifacts will be uploaded to.
+    upload_dir: String,
+
+    /// Credentials for S3 downloads/uploads. As of this writing the credentials need
+    /// to have permissions to:
+    ///
+    /// * Upload/download/list to the `rust-lang-ci2` bucket
+    /// * Upload/download/list to the "upload" bucket specified above
+    /// * Create a cloudfront invalidation of the IDs below
+    aws_access_key_id: String,
+    /// Secret key of the access key specified above
+    aws_secret_key: String,
+
+    /// CloudFront Distribution ID for static.rust-lang.org
+    cloudfront_distribution_id: String,
+    /// CloudFront Distribution ID for doc.rust-lang.org
+    rustdoc_cf_distribution_id: String,
 }
