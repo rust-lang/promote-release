@@ -306,13 +306,12 @@ upload-addr = \"{}/{}\"
         let _ = fs::remove_dir_all(&dl);
         fs::create_dir_all(&dl)?;
 
-        let src = format!("s3://rust-lang-ci2/rustc-builds/{}/", rev);
         run(self
             .aws_s3()
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
-            .arg(&src)
+            .arg(&self.s3_artifacts_url(&format!("{}/", rev)))
             .arg(format!("{}/", dl.display())))?;
 
         let mut files = dl.read_dir()?;
@@ -376,14 +375,13 @@ upload-addr = \"{}/{}\"
     }
 
     fn upload_signatures(&mut self, rev: &str) -> Result<(), Error> {
-        let dst = format!("s3://rust-lang-ci2/rustc-builds/{}/", rev);
         run(self
             .aws_s3()
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
             .arg(self.build_dir().join("build/dist/"))
-            .arg(&dst))
+            .arg(&self.s3_artifacts_url(&format!("{}/", rev))))
     }
 
     fn publish_archive(&mut self) -> Result<(), Error> {
@@ -572,6 +570,21 @@ upload-addr = \"{}/{}\"
         self.work.join("build")
     }
 
+    fn s3_artifacts_url(&self, path: &str) -> String {
+        format!(
+            "s3://{}/{}/{}",
+            self.secrets
+                .download_bucket
+                .as_deref()
+                .unwrap_or("rust-lang-ci2"),
+            self.secrets
+                .download_dir
+                .as_deref()
+                .unwrap_or("rustc-builds"),
+            path,
+        )
+    }
+
     fn aws_s3(&self) -> Command {
         let mut cmd = Command::new("aws");
         cmd.arg("s3");
@@ -660,10 +673,15 @@ struct DistConfig {
     /// The S3 directory that release artifacts will be uploaded to.
     upload_dir: String,
 
+    /// The S3 bucket that CI artifacts will be downloaded from.
+    download_bucket: Option<String>,
+    /// The S3 directory that CI artifacts will be downloaded from.
+    download_dir: Option<String>,
+
     /// Credentials for S3 downloads/uploads. As of this writing the credentials need
     /// to have permissions to:
     ///
-    /// * Upload/download/list to the `rust-lang-ci2` bucket
+    /// * Upload/download/list to the "download" bucket specified above
     /// * Upload/download/list to the "upload" bucket specified above
     /// * Create a cloudfront invalidation of the IDs below
     aws_access_key_id: String,
