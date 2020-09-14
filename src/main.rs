@@ -1,34 +1,18 @@
-extern crate curl;
-extern crate flate2;
-extern crate fs2;
-extern crate rand;
-#[macro_use]
-extern crate serde_json;
-extern crate tar;
-extern crate toml;
-extern crate xz2;
-
 use std::env;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
-use std::path::{PathBuf, Path};
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use anyhow::Error;
 use curl::easy::Easy;
 use fs2::FileExt;
-
-macro_rules! t {
-    ($e:expr) => (match $e {
-        Ok(e) => e,
-        Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
-    })
-}
 
 struct Context {
     work: PathBuf,
     release: String,
     handle: Easy,
-	secrets: toml::Value,
+    secrets: DistConfig,
     date: String,
     current_version: Option<String>,
 }
@@ -36,24 +20,26 @@ struct Context {
 // Called as:
 //
 //  $prog work/dir release-channel path/to/secrets.toml
-fn main() {
-    let mut secrets = String::new();
-    t!(t!(File::open(env::args().nth(3).unwrap())).read_to_string(&mut secrets));
+fn main() -> Result<(), Error> {
+    let secrets = std::fs::read_to_string(env::args().nth(3).unwrap())?;
 
     Context {
-        work: t!(env::current_dir()).join(env::args_os().nth(1).unwrap()),
+        work: env::current_dir()?.join(env::args_os().nth(1).unwrap()),
         release: env::args().nth(2).unwrap(),
-        secrets: t!(secrets.parse()),
+        secrets: toml::from_str::<Config>(&secrets)?.dist,
         handle: Easy::new(),
-        date: output(Command::new("date").arg("+%Y-%m-%d")).trim().to_string(),
+        date: output(Command::new("date").arg("+%Y-%m-%d"))?
+            .trim()
+            .to_string(),
         current_version: None,
-    }.run()
+    }
+    .run()
 }
 
 impl Context {
-    fn run(&mut self) {
-        let _lock = self.lock();
-        self.update_repo();
+    fn run(&mut self) -> Result<(), Error> {
+        let _lock = self.lock()?;
+        self.update_repo()?;
 
         let override_var = env::var("PROMOTE_RELEASE_OVERRIDE_BRANCH");
         let branch = if let Ok(branch) = override_var.as_ref() {
@@ -66,66 +52,73 @@ impl Context {
                 _ => panic!("unknown release: {}", self.release),
             }
         };
-        self.do_release(branch);
+        self.do_release(branch)?;
+
+        Ok(())
     }
 
     /// Locks execution of concurrent invocations of this script in case one
     /// takes a long time to run. The call to `try_lock_exclusive` will fail if
     /// the lock is held already
-    fn lock(&mut self) -> File {
-        t!(fs::create_dir_all(&self.work));
-        let file = t!(OpenOptions::new()
-                            .read(true)
-                            .write(true)
-                            .create(true)
-                            .open(self.work.join(".lock")));
-        t!(file.try_lock_exclusive());
-        file
+    fn lock(&mut self) -> Result<File, Error> {
+        fs::create_dir_all(&self.work)?;
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(self.work.join(".lock"))?;
+        file.try_lock_exclusive()?;
+        Ok(file)
     }
 
     /// Update the rust repository we have cached, either cloning a fresh one or
     /// fetching remote references
-    fn update_repo(&mut self) {
+    fn update_repo(&mut self) -> Result<(), Error> {
         // Clone/update the repo
         let dir = self.rust_dir();
         if dir.is_dir() {
             println!("fetching");
             run(Command::new("git")
-                        .arg("fetch")
-                        .arg("origin")
-                        .current_dir(&dir));
+                .arg("fetch")
+                .arg("origin")
+                .current_dir(&dir))?;
         } else {
             println!("cloning");
             run(Command::new("git")
-                        .arg("clone")
-                        .arg("https://github.com/rust-lang/rust")
-                        .arg(&dir));
+                .arg("clone")
+                .arg("https://github.com/rust-lang/rust")
+                .arg(&dir))?;
         }
+
+        Ok(())
     }
 
     /// Does a release for the `branch` specified.
-    fn do_release(&mut self, branch: &str) {
+    fn do_release(&mut self, branch: &str) -> Result<(), Error> {
         // Learn the precise rev of the remote branch, this'll guide what we
         // download.
-        let rev = output(Command::new("git")
-                                 .arg("rev-parse")
-                                 .arg(format!("origin/{}", branch))
-                                 .current_dir(&self.rust_dir()));
+        let rev = output(
+            Command::new("git")
+                .arg("rev-parse")
+                .arg(format!("origin/{}", branch))
+                .current_dir(&self.rust_dir()),
+        )?;
         let rev = rev.trim();
         println!("{} rev is {}", self.release, rev);
 
         // Download the current live manifest for the channel we're releasing.
         // Through that we learn the current version of the release.
-        let manifest = self.download_manifest();
+        let manifest = self.download_manifest()?;
         let previous_version = manifest["pkg"]["rust"]["version"]
-                                       .as_str()
-                                       .expect("rust version not a string");
+            .as_str()
+            .expect("rust version not a string");
         println!("previous version: {}", previous_version);
 
         // If the previously released version is the same rev, then there's
         // nothing for us to do, nothing has changed.
         if previous_version.contains(&rev[..7]) {
-            return println!("found rev in previous version, skipping");
+            println!("found rev in previous version, skipping");
+            return Ok(());
         }
 
         // We may still not do a release if the version number hasn't changed.
@@ -136,52 +129,55 @@ impl Context {
         // different and the versions are the same then there's nothing for us
         // to do. This represents a scenario where changes have been merged to
         // the stable/beta branch but the version bump hasn't happened yet.
-        self.download_artifacts(&rev);
-        if self.current_version_same(&previous_version) {
-            return println!("version hasn't changed, skipping");
+        self.download_artifacts(&rev)?;
+        if self.current_version_same(&previous_version)? {
+            println!("version hasn't changed, skipping");
+            return Ok(());
         }
 
-        self.assert_all_components_present();
+        self.assert_all_components_present()?;
 
         // Ok we've now determined that a release needs to be done. Let's
         // configure rust, build a manifest and sign the artifacts we just downloaded, and upload the
         // signatures and manifest to the CI bucket.
-        self.configure_rust(rev);
-        self.sign_artifacts();
-        self.upload_signatures(&rev);
+        self.configure_rust(rev)?;
+        self.sign_artifacts()?;
+        self.upload_signatures(&rev)?;
 
         // Merge all the signatures with the download files, and then sync that
         // whole dir up to the release archives
-        for file in t!(self.build_dir().join("build/dist/").read_dir()) {
-            let file = t!(file);
-            t!(fs::copy(file.path(), self.dl_dir().join(file.file_name())));
+        for file in self.build_dir().join("build/dist/").read_dir()? {
+            let file = file?;
+            fs::copy(file.path(), self.dl_dir().join(file.file_name()))?;
         }
-        self.publish_archive();
-        self.publish_docs();
-        self.publish_release();
+        self.publish_archive()?;
+        self.publish_docs()?;
+        self.publish_release()?;
 
-        self.invalidate_cloudfront();
+        self.invalidate_cloudfront()?;
 
         // Clean up after ourselves to avoid leaving gigabytes of artifacts
         // around.
-        drop(fs::remove_dir_all(&self.dl_dir()));
+        let _ = fs::remove_dir_all(&self.dl_dir());
+
+        Ok(())
     }
 
-    fn configure_rust(&mut self, rev: &str) {
+    fn configure_rust(&mut self, rev: &str) -> Result<(), Error> {
         let build = self.build_dir();
         drop(fs::remove_dir_all(&build));
-        t!(fs::create_dir_all(&build));
+        fs::create_dir_all(&build)?;
         let rust = self.rust_dir();
 
         run(Command::new("git")
-                    .arg("reset")
-                    .arg("--hard")
-                    .arg(rev)
-                    .current_dir(&rust));
+            .arg("reset")
+            .arg("--hard")
+            .arg(rev)
+            .current_dir(&rust))?;
 
         run(Command::new(rust.join("configure"))
-                    .current_dir(&build)
-                    .arg(format!("--release-channel={}", self.release)));
+            .current_dir(&build)
+            .arg(format!("--release-channel={}", self.release)))?;
         let mut config = String::new();
         let path = build.join("config.toml");
         drop(File::open(&path).and_then(|mut f| f.read_to_string(&mut config)));
@@ -191,53 +187,63 @@ impl Context {
             new_config.push_str(line);
             new_config.push_str("\n");
         }
-        new_config.push_str(&format!("
+        new_config.push_str(&format!(
+            "
 [dist]
 sign-folder = \"{}\"
 gpg-password-file = \"{}\"
 upload-addr = \"{}/{}\"
 ",
             self.dl_dir().display(),
-            self.secrets["dist"]["gpg-password-file"].as_str().unwrap(),
-            self.secrets["dist"]["upload-addr"].as_str().unwrap(),
-            self.secrets["dist"]["upload-dir"].as_str().unwrap()));
-        t!(t!(File::create(&path)).write_all(new_config.as_bytes()));
+            self.secrets.gpg_password_file,
+            self.secrets.upload_addr,
+            self.secrets.upload_dir,
+        ));
+        std::fs::write(&path, new_config.as_bytes())?;
+
+        Ok(())
     }
 
-    fn current_version_same(&mut self, prev: &str) -> bool {
+    fn current_version_same(&mut self, prev: &str) -> Result<bool, Error> {
         // nightly's always changing
         if self.release == "nightly" {
-            return false
+            return Ok(false);
         }
         let prev_version = prev.split(' ').next().unwrap();
 
-        let current = t!(self.dl_dir().read_dir()).filter_map(|e| {
-            let e = t!(e);
+        let mut current = None;
+        for e in self.dl_dir().read_dir()? {
+            let e = e?;
             let filename = e.file_name().into_string().unwrap();
             if !filename.starts_with("rustc-") || !filename.ends_with(".tar.gz") {
-                return None
+                continue;
             }
             println!("looking inside {} for a version", filename);
 
-            let file = t!(File::open(&e.path()));
+            let file = File::open(&e.path())?;
             let reader = flate2::read::GzDecoder::new(file);
             let mut archive = tar::Archive::new(reader);
 
-            let entry = t!(archive.entries()).map(|e| t!(e)).filter(|e| {
-                let path = t!(e.path());
-                match path.iter().skip(1).next() {
-                    Some(path) => path == Path::new("version"),
-                    None => false,
+            let mut version_file = None;
+            for entry in archive.entries()? {
+                let entry = entry?;
+                let path = entry.path()?;
+                if let Some(path) = path.iter().skip(1).next() {
+                    if path == Path::new("version") {
+                        version_file = Some(entry);
+                        break;
+                    }
                 }
-            }).next();
-            let mut entry = match entry {
-                Some(e) => e,
-                None => return None,
-            };
-            let mut contents = String::new();
-            t!(entry.read_to_string(&mut contents));
-            Some(contents)
-        }).next().expect("no archives with a version");
+            }
+            if let Some(mut entry) = version_file {
+                let mut contents = String::new();
+                entry.read_to_string(&mut contents)?;
+                current = Some(contents);
+
+                break;
+            }
+        }
+        let current = current.ok_or_else(|| anyhow::anyhow!("no archives with a version"))?;
 
         println!("current version: {}", current);
 
@@ -253,29 +259,36 @@ upload-addr = \"{}/{}\"
         // artifacts but this script may be run. Try to detect that case here if
         // the versions mismatch and panic. We'll try again later once that PR
         // has merged and everything should look good.
-        if (current.contains("nightly") && !prev.contains("nightly")) ||
-           (current.contains("beta") && !prev.contains("beta")) {
-            panic!("looks like channels are being switched -- was this branch \
+        if (current.contains("nightly") && !prev.contains("nightly"))
+            || (current.contains("beta") && !prev.contains("beta"))
+        {
+            panic!(
+                "looks like channels are being switched -- was this branch \
                     just created and has a pending PR to change the release \
-                    channel?");
+                    channel?"
+            );
         }
 
-        prev_version == current_version
+        Ok(prev_version == current_version)
     }
 
     /// Make sure this release comes with a minimum of components.
     ///
     /// Note that we already don't merge PRs in rust-lang/rust that don't
     /// build cargo, so this cannot realistically fail.
-    fn assert_all_components_present(&self) {
+    fn assert_all_components_present(&self) -> Result<(), Error> {
         if self.release != "nightly" {
-            return
+            return Ok(());
         }
-        let components = t!(self.dl_dir().read_dir())
-            .map(|e| t!(e))
-            .map(|e| e.file_name().into_string().unwrap())
-            .filter(|s| s.contains("x86_64-unknown-linux-gnu"))
-            .collect::<Vec<_>>();
+
+        let mut components = Vec::new();
+        for entry in self.dl_dir().read_dir()? {
+            let name = entry?.file_name().into_string().unwrap();
+            if name.contains("x86_64-unknown-linux-gnu") {
+                components.push(name);
+            }
+        }
+
         println!("components in this nightly {:?}", components);
         assert!(components.iter().any(|s| s.starts_with("rustc-")));
         assert!(components.iter().any(|s| s.starts_with("rust-std-")));
@@ -284,25 +297,30 @@ upload-addr = \"{}/{}\"
         // assert!(components.iter().any(|s| s.starts_with("rustfmt-")));
         // assert!(components.iter().any(|s| s.starts_with("rls-")));
         // assert!(components.iter().any(|s| s.starts_with("clippy-")));
+
+        Ok(())
     }
 
-    fn download_artifacts(&mut self, rev: &str) {
+    fn download_artifacts(&mut self, rev: &str) -> Result<(), Error> {
         let dl = self.dl_dir();
-        drop(fs::remove_dir_all(&dl));
-        t!(fs::create_dir_all(&dl));
+        let _ = fs::remove_dir_all(&dl);
+        fs::create_dir_all(&dl)?;
 
         let src = format!("s3://rust-lang-ci2/rustc-builds/{}/", rev);
-        run(self.aws_s3()
-                .arg("cp")
-                .arg("--recursive")
-                .arg("--only-show-errors")
-                .arg(&src)
-                .arg(format!("{}/", dl.display())));
+        run(self
+            .aws_s3()
+            .arg("cp")
+            .arg("--recursive")
+            .arg("--only-show-errors")
+            .arg(&src)
+            .arg(format!("{}/", dl.display())))?;
 
-        let mut files = t!(dl.read_dir());
+        let mut files = dl.read_dir()?;
         if files.next().is_none() {
-            panic!("appears that this rev doesn't have any artifacts, \
-                    is this a stable/beta branch awaiting a PR?");
+            panic!(
+                "appears that this rev doesn't have any artifacts, \
+                    is this a stable/beta branch awaiting a PR?"
+            );
         }
 
         // Delete residue signature/hash files. These may come around for a few
@@ -320,69 +338,72 @@ upload-addr = \"{}/{}\"
         // and xz tarballs have the same content, we did not deploy the gz files
         // from the CI. But rustup users may still expect to get gz files, so we
         // are recompressing the xz files as gz here.
-        for file in t!(dl.read_dir()) {
-            let file = t!(file);
+        for file in dl.read_dir()? {
+            let file = file?;
             let path = file.path();
             match path.extension().and_then(|s| s.to_str()) {
                 // Delete signature/hash files...
-                Some("asc") |
-                Some("sha256") => {
-                    t!(fs::remove_file(&path));
+                Some("asc") | Some("sha256") => {
+                    fs::remove_file(&path)?;
                 }
                 // Generate *.gz from *.xz...
                 Some("xz") => {
                     let gz_path = path.with_extension("gz");
                     if !gz_path.is_file() {
                         println!("recompressing {}...", gz_path.display());
-                        let xz = t!(File::open(path));
+                        let xz = File::open(path)?;
                         let mut xz = xz2::read::XzDecoder::new(xz);
-                        let gz = t!(File::create(gz_path));
+                        let gz = File::create(gz_path)?;
                         let mut gz = flate2::write::GzEncoder::new(gz, flate2::Compression::best());
-                        t!(io::copy(&mut xz, &mut gz));
+                        io::copy(&mut xz, &mut gz)?;
                     }
                 }
                 _ => {}
             }
         }
+
+        Ok(())
     }
 
     /// Create manifest and sign the artifacts.
-    fn sign_artifacts(&mut self) {
+    fn sign_artifacts(&mut self) -> Result<(), Error> {
         let build = self.build_dir();
         // This calls `src/tools/build-manifest` from the rustc repo.
         run(Command::new(self.rust_dir().join("x.py"))
-                    .current_dir(&build)
-                    .arg("dist")
-                    .arg("hash-and-sign"));
+            .current_dir(&build)
+            .arg("dist")
+            .arg("hash-and-sign"))
     }
 
-    fn upload_signatures(&mut self, rev: &str) {
+    fn upload_signatures(&mut self, rev: &str) -> Result<(), Error> {
         let dst = format!("s3://rust-lang-ci2/rustc-builds/{}/", rev);
-        run(self.aws_s3()
-                .arg("cp")
-                .arg("--recursive")
-                .arg("--only-show-errors")
-                .arg(self.build_dir().join("build/dist/"))
-                .arg(&dst));
+        run(self
+            .aws_s3()
+            .arg("cp")
+            .arg("--recursive")
+            .arg("--only-show-errors")
+            .arg(self.build_dir().join("build/dist/"))
+            .arg(&dst))
     }
 
-    fn publish_archive(&mut self) {
-        let bucket = self.secrets["dist"]["upload-bucket"].as_str().unwrap();
-        let dir = self.secrets["dist"]["upload-dir"].as_str().unwrap();
+    fn publish_archive(&mut self) -> Result<(), Error> {
+        let bucket = &self.secrets.upload_bucket;
+        let dir = &self.secrets.upload_dir;
         let dst = format!("s3://{}/{}/{}/", bucket, dir, self.date);
-        run(self.aws_s3()
-                .arg("cp")
-                .arg("--recursive")
-                .arg("--only-show-errors")
-                .arg("--metadata-directive")
-                .arg("REPLACE")
-                .arg("--cache-control")
-                .arg("public")
-                .arg(format!("{}/", self.dl_dir().display()))
-                .arg(&dst));
+        run(self
+            .aws_s3()
+            .arg("cp")
+            .arg("--recursive")
+            .arg("--only-show-errors")
+            .arg("--metadata-directive")
+            .arg("REPLACE")
+            .arg("--cache-control")
+            .arg("public")
+            .arg(format!("{}/", self.dl_dir().display()))
+            .arg(&dst))
     }
 
-    fn publish_docs(&mut self) {
+    fn publish_docs(&mut self) -> Result<(), Error> {
         let (version, upload_dir) = match &self.release[..] {
             "stable" => {
                 let vers = &self.current_version.as_ref().unwrap()[..];
@@ -397,7 +418,7 @@ upload-addr = \"{}/{}\"
         // For now we just arbitrarily pick x86_64-unknown-linux-gnu.
         let docs = self.work.join("docs");
         drop(fs::remove_dir_all(&docs));
-        t!(fs::create_dir_all(&docs));
+        fs::create_dir_all(&docs)?;
         let target = "x86_64-unknown-linux-gnu";
 
         // Unpack the regular documentation tarball.
@@ -405,11 +426,11 @@ upload-addr = \"{}/{}\"
         let tarball = format!("{}.tar.gz", self.dl_dir().join(&tarball_prefix).display());
         let tarball_dir = format!("{}/rust-docs/share/doc/rust/html", tarball_prefix);
         run(Command::new("tar")
-                    .arg("xf")
-                    .arg(&tarball)
-                    .arg("--strip-components=6")
-                    .arg(&tarball_dir)
-                    .current_dir(&docs));
+            .arg("xf")
+            .arg(&tarball)
+            .arg("--strip-components=6")
+            .arg(&tarball_dir)
+            .current_dir(&docs))?;
 
         // Construct path to rustc documentation.
         let tarball_prefix = format!("rustc-docs-{}-{}", version, target);
@@ -418,27 +439,28 @@ upload-addr = \"{}/{}\"
         // Only create and unpack rustc docs if artefacts include tarball.
         if Path::new(&tarball).exists() {
             let rustc_docs = docs.join("nightly-rustc");
-            t!(fs::create_dir_all(&rustc_docs));
+            fs::create_dir_all(&rustc_docs)?;
 
             // Construct the path that contains the documentation inside the tarball.
             let tarball_dir = format!("{}/rustc-docs/share/doc/rust/html", tarball_prefix);
             let tarball_dir_new = format!("{}/rustc", tarball_dir);
 
-            if t!(Command::new("tar")
+            if Command::new("tar")
                 .arg("tf")
                 .arg(&tarball)
                 .arg(&tarball_dir_new)
                 .current_dir(&rustc_docs)
-                .output())
+                .output()?
                 .status
-                .success() {
+                .success()
+            {
                 // Unpack the rustc documentation into the new directory.
                 run(Command::new("tar")
                     .arg("xf")
                     .arg(&tarball)
                     .arg("--strip-components=7")
                     .arg(&tarball_dir_new)
-                    .current_dir(&rustc_docs));
+                    .current_dir(&rustc_docs))?;
             } else {
                 // Unpack the rustc documentation into the new directory.
                 run(Command::new("tar")
@@ -446,65 +468,69 @@ upload-addr = \"{}/{}\"
                     .arg(&tarball)
                     .arg("--strip-components=6")
                     .arg(&tarball_dir)
-                    .current_dir(&rustc_docs));
+                    .current_dir(&rustc_docs))?;
             }
-
         }
 
         // Upload this to `/doc/$channel`
-        let bucket = self.secrets["dist"]["upload-bucket"].as_str().unwrap();
+        let bucket = &self.secrets.upload_bucket;
         let dst = format!("s3://{}/doc/{}/", bucket, upload_dir);
-        run(self.aws_s3()
-                .arg("sync")
-                .arg("--delete")
-                .arg("--only-show-errors")
-                .arg(format!("{}/", docs.display()))
-                .arg(&dst));
-        self.invalidate_docs(upload_dir);
+        run(self
+            .aws_s3()
+            .arg("sync")
+            .arg("--delete")
+            .arg("--only-show-errors")
+            .arg(format!("{}/", docs.display()))
+            .arg(&dst))?;
+        self.invalidate_docs(upload_dir)?;
 
         // Stable artifacts also go to `/doc/$version/
         if upload_dir == "stable" {
             let dst = format!("s3://{}/doc/{}/", bucket, version);
-            run(self.aws_s3()
-                    .arg("sync")
-                    .arg("--delete")
-                    .arg("--only-show-errors")
-                    .arg(format!("{}/", docs.display()))
-                    .arg(&dst));
-            self.invalidate_docs(&version);
+            run(self
+                .aws_s3()
+                .arg("sync")
+                .arg("--delete")
+                .arg("--only-show-errors")
+                .arg(format!("{}/", docs.display()))
+                .arg(&dst))?;
+            self.invalidate_docs(&version)?;
         }
+
+        Ok(())
     }
 
-    fn invalidate_docs(&self, dir: &str) {
-        let distribution_id = self.secrets["dist"]["rustdoc-cf-distribution-id"]
-                                          .as_str().unwrap();
+    fn invalidate_docs(&self, dir: &str) -> Result<(), Error> {
+        let distribution_id = &self.secrets.rustdoc_cf_distribution_id;
         let mut cmd = Command::new("aws");
         self.aws_creds(&mut cmd);
         cmd.arg("cloudfront")
             .arg("create-invalidation")
-            .arg("--distribution-id").arg(distribution_id);
+            .arg("--distribution-id")
+            .arg(distribution_id);
         if dir == "stable" {
             cmd.arg("--paths").arg("/*");
         } else {
             cmd.arg("--paths").arg(format!("/{0}/*", dir));
         }
-        run(&mut cmd);
+        run(&mut cmd)
     }
 
-    fn publish_release(&mut self) {
-        let bucket = self.secrets["dist"]["upload-bucket"].as_str().unwrap();
-        let dir = self.secrets["dist"]["upload-dir"].as_str().unwrap();
+    fn publish_release(&mut self) -> Result<(), Error> {
+        let bucket = &self.secrets.upload_bucket;
+        let dir = &self.secrets.upload_dir;
         let dst = format!("s3://{}/{}/", bucket, dir);
-        run(self.aws_s3()
-                .arg("cp")
-                .arg("--recursive")
-                .arg("--only-show-errors")
-                .arg(format!("{}/", self.dl_dir().display()))
-                .arg(&dst));
+        run(self
+            .aws_s3()
+            .arg("cp")
+            .arg("--recursive")
+            .arg("--only-show-errors")
+            .arg(format!("{}/", self.dl_dir().display()))
+            .arg(&dst))
     }
 
-    fn invalidate_cloudfront(&mut self) {
-        let json = json!({
+    fn invalidate_cloudfront(&mut self) -> Result<(), Error> {
+        let json = serde_json::json!({
             "Paths": {
                 "Items": [
                     "/dist/channel*",
@@ -515,18 +541,23 @@ upload-addr = \"{}/{}\"
                 "Quantity": 4,
             },
             "CallerReference": format!("rct-{}", rand::random::<usize>()),
-        }).to_string();
+        })
+        .to_string();
         let dst = self.work.join("payload.json");
-        t!(t!(File::create(&dst)).write_all(json.as_bytes()));
+        std::fs::write(&dst, json.as_bytes())?;
 
-        let distribution_id = self.secrets["dist"]["cloudfront-distribution-id"]
-                                          .as_str().unwrap();
+        let distribution_id = &self.secrets.cloudfront_distribution_id;
         let mut cmd = Command::new("aws");
         self.aws_creds(&mut cmd);
-        run(cmd.arg("cloudfront")
-               .arg("create-invalidation")
-               .arg("--invalidation-batch").arg(format!("file://{}", dst.display()))
-               .arg("--distribution-id").arg(distribution_id));
+        run(cmd
+            .arg("cloudfront")
+            .arg("create-invalidation")
+            .arg("--invalidation-batch")
+            .arg(format!("file://{}", dst.display()))
+            .arg("--distribution-id")
+            .arg(distribution_id))?;
+
+        Ok(())
     }
 
     fn rust_dir(&self) -> PathBuf {
@@ -545,57 +576,102 @@ upload-addr = \"{}/{}\"
         let mut cmd = Command::new("aws");
         cmd.arg("s3");
         self.aws_creds(&mut cmd);
-        return cmd
+        return cmd;
     }
 
     fn aws_creds(&self, cmd: &mut Command) {
-        let access = self.secrets["dist"]["aws-access-key-id"].as_str().unwrap();
-        let secret = self.secrets["dist"]["aws-secret-key"].as_str().unwrap();
-        cmd.env("AWS_ACCESS_KEY_ID", &access)
-           .env("AWS_SECRET_ACCESS_KEY", &secret);
+        cmd.env("AWS_ACCESS_KEY_ID", &self.secrets.aws_access_key_id)
+            .env("AWS_SECRET_ACCESS_KEY", &self.secrets.aws_secret_key);
     }
 
-    fn download_manifest(&mut self) -> toml::Value {
-        t!(self.handle.get(true));
-        let addr = self.secrets["dist"]["upload-addr"].as_str().unwrap();
-        let upload_dir = self.secrets["dist"]["upload-dir"].as_str().unwrap();
-        let url = format!("{}/{}/channel-rust-{}.toml",
-                          addr,
-                          upload_dir,
-                          self.release);
+    fn download_manifest(&mut self) -> Result<toml::Value, Error> {
+        self.handle.get(true)?;
+        let addr = &self.secrets.upload_addr;
+        let upload_dir = &self.secrets.upload_dir;
+        let url = format!("{}/{}/channel-rust-{}.toml", addr, upload_dir, self.release);
         println!("downloading manifest from: {}", url);
-        t!(self.handle.url(&url));
+        self.handle.url(&url)?;
         let mut result = Vec::new();
         {
             let mut t = self.handle.transfer();
 
-            t!(t.write_function(|data| {
+            t.write_function(|data| {
                 result.extend_from_slice(data);
                 Ok(data.len())
-            }));
-            t!(t.perform());
+            })?;
+            t.perform()?;
         }
-        assert_eq!(t!(self.handle.response_code()), 200);
-        t!(t!(String::from_utf8(result)).parse())
+        assert_eq!(self.handle.response_code()?, 200);
+        Ok(String::from_utf8(result)?.parse()?)
     }
 }
 
-fn run(cmd: &mut Command) {
+fn run(cmd: &mut Command) -> Result<(), Error> {
     println!("running {:?}", cmd);
-    let status = t!(cmd.status());
+    let status = cmd.status()?;
     if !status.success() {
-        panic!("failed command:{:?}\n:{}", cmd, status);
+        anyhow::bail!("failed command:{:?}\n:{}", cmd, status);
     }
+    Ok(())
 }
 
-fn output(cmd: &mut Command) -> String {
+fn output(cmd: &mut Command) -> Result<String, Error> {
     println!("running {:?}", cmd);
-    let output = t!(cmd.output());
+    let output = cmd.output()?;
     if !output.status.success() {
-        panic!("failed command:{:?}\n:{}\n\n{}\n\n{}", cmd, output.status,
-               String::from_utf8_lossy(&output.stdout),
-               String::from_utf8_lossy(&output.stderr),);
+        anyhow::bail!(
+            "failed command:{:?}\n:{}\n\n{}\n\n{}",
+            cmd,
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
     }
 
-    String::from_utf8(output.stdout).unwrap()
+    Ok(String::from_utf8(output.stdout)?)
+}
+
+#[derive(serde::Deserialize)]
+struct Config {
+    dist: DistConfig,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct DistConfig {
+    /// Path to the file containing the password of the gpg key.
+    gpg_password_file: String,
+
+    /// Remote HTTP host artifacts will be uploaded to. Note that this is *not* the same as what's
+    /// configured in `config.toml` for rustbuild, it's just the *host* that we're uploading to and
+    /// going to be looking at urls from.
+    ///
+    /// This is used in a number of places such as:
+    ///
+    /// * Downloading manifestss
+    /// * Urls in manifests
+    ///
+    /// and possibly more. Note that most urls end up appending `upload-dir` below to this address
+    /// specified. This address should not have a trailing slash.
+    upload_addr: String,
+
+    /// The S3 bucket that release artifacts will be uploaded to.
+    upload_bucket: String,
+    /// The S3 directory that release artifacts will be uploaded to.
+    upload_dir: String,
+
+    /// Credentials for S3 downloads/uploads. As of this writing the credentials need
+    /// to have permissions to:
+    ///
+    /// * Upload/download/list to the `rust-lang-ci2` bucket
+    /// * Upload/download/list to the "upload" bucket specified above
+    /// * Create a cloudfront invalidation of the IDs below
+    aws_access_key_id: String,
+    /// Secret key of the access key specified above
+    aws_secret_key: String,
+
+    /// CloudFront Distribution ID for static.rust-lang.org
+    cloudfront_distribution_id: String,
+    /// CloudFront Distribution ID for doc.rust-lang.org
+    rustdoc_cf_distribution_id: String,
 }
