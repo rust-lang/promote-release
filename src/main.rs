@@ -154,7 +154,7 @@ impl Context {
         self.publish_docs()?;
         self.publish_release()?;
 
-        self.invalidate_cloudfront()?;
+        self.invalidate_releases()?;
 
         // Clean up after ourselves to avoid leaving gigabytes of artifacts
         // around.
@@ -499,19 +499,14 @@ upload-addr = \"{}/{}\"
     }
 
     fn invalidate_docs(&self, dir: &str) -> Result<(), Error> {
-        let distribution_id = &self.secrets.rustdoc_cf_distribution_id;
-        let mut cmd = Command::new("aws");
-        self.aws_creds(&mut cmd);
-        cmd.arg("cloudfront")
-            .arg("create-invalidation")
-            .arg("--distribution-id")
-            .arg(distribution_id);
-        if dir == "stable" {
-            cmd.arg("--paths").arg("/*");
-        } else {
-            cmd.arg("--paths").arg(format!("/{0}/*", dir));
-        }
-        run(&mut cmd)
+        self.invalidate_cloudfront(
+            &self.secrets.rustdoc_cf_distribution_id,
+            &[if dir == "stable" {
+                "/*".into()
+            } else {
+                format!("/{}/*", dir)
+            }],
+        )
     }
 
     fn publish_release(&mut self) -> Result<(), Error> {
@@ -527,16 +522,31 @@ upload-addr = \"{}/{}\"
             .arg(&dst))
     }
 
-    fn invalidate_cloudfront(&mut self) -> Result<(), Error> {
+    fn invalidate_releases(&self) -> Result<(), Error> {
+        self.invalidate_cloudfront(
+            &self.secrets.cloudfront_distribution_id,
+            &[
+                "/dist/channel*".into(),
+                "/dist/rust*".into(),
+                "/dist/index*".into(),
+                "/dist/".into(),
+            ],
+        )
+    }
+
+    fn invalidate_cloudfront(&self, distribution_id: &str, paths: &[String]) -> Result<(), Error> {
+        if std::env::var("PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS").is_ok() {
+            println!();
+            println!("WARNING! Skipped CloudFront invalidation of: {:?}", paths);
+            println!("Unset PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS if you're in production");
+            println!();
+            return Ok(());
+        }
+
         let json = serde_json::json!({
             "Paths": {
-                "Items": [
-                    "/dist/channel*",
-                    "/dist/rust*",
-                    "/dist/index*",
-                    "/dist/",
-                ],
-                "Quantity": 4,
+                "Items": paths,
+                "Quantity": paths.len(),
             },
             "CallerReference": format!("rct-{}", rand::random::<usize>()),
         })
@@ -544,7 +554,6 @@ upload-addr = \"{}/{}\"
         let dst = self.work.join("payload.json");
         std::fs::write(&dst, json.as_bytes())?;
 
-        let distribution_id = &self.secrets.cloudfront_distribution_id;
         let mut cmd = Command::new("aws");
         self.aws_creds(&mut cmd);
         run(cmd
