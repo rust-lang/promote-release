@@ -587,6 +587,13 @@ upload-addr = \"{}/{}\"
 
     fn aws_s3(&self) -> Command {
         let mut cmd = Command::new("aws");
+
+        // Allow using non-S3 backends with the AWS CLI.
+        if let Some(url) = &self.secrets.aws_s3_endpoint_url {
+            cmd.arg("--endpoint-url");
+            cmd.arg(url);
+        }
+
         cmd.arg("s3");
         self.aws_creds(&mut cmd);
         return cmd;
@@ -687,6 +694,10 @@ struct DistConfig {
     aws_access_key_id: String,
     /// Secret key of the access key specified above
     aws_secret_key: String,
+
+    /// Custom Endpoint URL for S3. Set this if you want to point to an S3-compatible service
+    /// instead of the AWS one.
+    aws_s3_endpoint_url: Option<String>,
 
     /// CloudFront Distribution ID for static.rust-lang.org
     cloudfront_distribution_id: String,
