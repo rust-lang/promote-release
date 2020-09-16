@@ -165,8 +165,13 @@ impl Context {
 
     fn configure_rust(&mut self, rev: &str) -> Result<(), Error> {
         let build = self.build_dir();
-        drop(fs::remove_dir_all(&build));
-        fs::create_dir_all(&build)?;
+        // Avoid deleting the build directory with the cached build artifacts when working locally.
+        if std::env::var("PROMOTE_RELEASE_SKIP_DELETE_BUILD_DIR").is_err() {
+            let _ = fs::remove_dir_all(&build);
+        }
+        if !build.exists() {
+            fs::create_dir_all(&build)?;
+        }
         let rust = self.rust_dir();
 
         run(Command::new("git")
