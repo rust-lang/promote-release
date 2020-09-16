@@ -41,6 +41,14 @@ weights 27GB).
 You can add additional files by tweaking the environment variables in
 `local/run.sh`.
 
+### Inspecting the contents of the object storage
+
+You can access the contents of the object storage by visiting
+<http://localhost:9000/minio> and logging in with:
+
+* Access Key: `access_key`
+* Secret Key: `secret_key`
+
 ## License
 
 The contents of this repository are licensed under both the MIT and the Apache
