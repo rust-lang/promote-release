@@ -3,10 +3,12 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 use anyhow::Error;
 use curl::easy::Easy;
 use fs2::FileExt;
+use rayon::prelude::*;
 
 struct Context {
     work: PathBuf,
@@ -338,10 +340,8 @@ upload-addr = \"{}/{}\"
         //    with the dev key and then it's signed with the prod key later. We
         //    want the prod key to overwrite the dev key signatures.
         //
-        // Also, generate *.gz from *.xz if the former is missing. Since the gz
-        // and xz tarballs have the same content, we did not deploy the gz files
-        // from the CI. But rustup users may still expect to get gz files, so we
-        // are recompressing the xz files as gz here.
+        // Also, collect paths that need to be recompressed
+        let mut to_recompress = Vec::new();
         for file in dl.read_dir()? {
             let file = file?;
             let path = file.path();
@@ -354,16 +354,45 @@ upload-addr = \"{}/{}\"
                 Some("xz") => {
                     let gz_path = path.with_extension("gz");
                     if !gz_path.is_file() {
-                        println!("recompressing {}...", gz_path.display());
-                        let xz = File::open(path)?;
-                        let mut xz = xz2::read::XzDecoder::new(xz);
-                        let gz = File::create(gz_path)?;
-                        let mut gz = flate2::write::GzEncoder::new(gz, flate2::Compression::best());
-                        io::copy(&mut xz, &mut gz)?;
+                        to_recompress.push((path.to_path_buf(), gz_path));
                     }
                 }
                 _ => {}
             }
+        }
+
+        // Also, generate *.gz from *.xz if the former is missing. Since the gz
+        // and xz tarballs have the same content, we did not deploy the gz files
+        // from the CI. But rustup users may still expect to get gz files, so we
+        // are recompressing the xz files as gz here.
+        if !to_recompress.is_empty() {
+            println!(
+                "starting to recompress {} files across {} threads",
+                to_recompress.len(),
+                to_recompress.len().min(rayon::current_num_threads()),
+            );
+            let recompress_start = Instant::now();
+
+            to_recompress
+                .par_iter()
+                .map(|(xz_path, gz_path)| {
+                    println!("recompressing {}...", gz_path.display());
+
+                    let xz = File::open(xz_path)?;
+                    let mut xz = xz2::read::XzDecoder::new(xz);
+                    let gz = File::create(gz_path)?;
+                    let mut gz = flate2::write::GzEncoder::new(gz, flate2::Compression::best());
+                    io::copy(&mut xz, &mut gz)?;
+
+                    Ok::<(), Error>(())
+                })
+                .collect::<Result<Vec<()>, Error>>()?;
+
+            println!(
+                "finished recompressing {} files in {:.2?}",
+                to_recompress.len(),
+                recompress_start.elapsed(),
+            );
         }
 
         Ok(())
