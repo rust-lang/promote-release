@@ -154,7 +154,7 @@ impl Context {
         self.publish_docs()?;
         self.publish_release()?;
 
-        self.invalidate_cloudfront()?;
+        self.invalidate_releases()?;
 
         // Clean up after ourselves to avoid leaving gigabytes of artifacts
         // around.
@@ -165,8 +165,13 @@ impl Context {
 
     fn configure_rust(&mut self, rev: &str) -> Result<(), Error> {
         let build = self.build_dir();
-        drop(fs::remove_dir_all(&build));
-        fs::create_dir_all(&build)?;
+        // Avoid deleting the build directory with the cached build artifacts when working locally.
+        if std::env::var("PROMOTE_RELEASE_SKIP_DELETE_BUILD_DIR").is_err() {
+            let _ = fs::remove_dir_all(&build);
+        }
+        if !build.exists() {
+            fs::create_dir_all(&build)?;
+        }
         let rust = self.rust_dir();
 
         run(Command::new("git")
@@ -306,13 +311,12 @@ upload-addr = \"{}/{}\"
         let _ = fs::remove_dir_all(&dl);
         fs::create_dir_all(&dl)?;
 
-        let src = format!("s3://rust-lang-ci2/rustc-builds/{}/", rev);
         run(self
             .aws_s3()
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
-            .arg(&src)
+            .arg(&self.s3_artifacts_url(&format!("{}/", rev)))
             .arg(format!("{}/", dl.display())))?;
 
         let mut files = dl.read_dir()?;
@@ -376,14 +380,13 @@ upload-addr = \"{}/{}\"
     }
 
     fn upload_signatures(&mut self, rev: &str) -> Result<(), Error> {
-        let dst = format!("s3://rust-lang-ci2/rustc-builds/{}/", rev);
         run(self
             .aws_s3()
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
             .arg(self.build_dir().join("build/dist/"))
-            .arg(&dst))
+            .arg(&self.s3_artifacts_url(&format!("{}/", rev))))
     }
 
     fn publish_archive(&mut self) -> Result<(), Error> {
@@ -501,19 +504,14 @@ upload-addr = \"{}/{}\"
     }
 
     fn invalidate_docs(&self, dir: &str) -> Result<(), Error> {
-        let distribution_id = &self.secrets.rustdoc_cf_distribution_id;
-        let mut cmd = Command::new("aws");
-        self.aws_creds(&mut cmd);
-        cmd.arg("cloudfront")
-            .arg("create-invalidation")
-            .arg("--distribution-id")
-            .arg(distribution_id);
-        if dir == "stable" {
-            cmd.arg("--paths").arg("/*");
-        } else {
-            cmd.arg("--paths").arg(format!("/{0}/*", dir));
-        }
-        run(&mut cmd)
+        self.invalidate_cloudfront(
+            &self.secrets.rustdoc_cf_distribution_id,
+            &[if dir == "stable" {
+                "/*".into()
+            } else {
+                format!("/{}/*", dir)
+            }],
+        )
     }
 
     fn publish_release(&mut self) -> Result<(), Error> {
@@ -529,16 +527,31 @@ upload-addr = \"{}/{}\"
             .arg(&dst))
     }
 
-    fn invalidate_cloudfront(&mut self) -> Result<(), Error> {
+    fn invalidate_releases(&self) -> Result<(), Error> {
+        self.invalidate_cloudfront(
+            &self.secrets.cloudfront_distribution_id,
+            &[
+                "/dist/channel*".into(),
+                "/dist/rust*".into(),
+                "/dist/index*".into(),
+                "/dist/".into(),
+            ],
+        )
+    }
+
+    fn invalidate_cloudfront(&self, distribution_id: &str, paths: &[String]) -> Result<(), Error> {
+        if std::env::var("PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS").is_ok() {
+            println!();
+            println!("WARNING! Skipped CloudFront invalidation of: {:?}", paths);
+            println!("Unset PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS if you're in production");
+            println!();
+            return Ok(());
+        }
+
         let json = serde_json::json!({
             "Paths": {
-                "Items": [
-                    "/dist/channel*",
-                    "/dist/rust*",
-                    "/dist/index*",
-                    "/dist/",
-                ],
-                "Quantity": 4,
+                "Items": paths,
+                "Quantity": paths.len(),
             },
             "CallerReference": format!("rct-{}", rand::random::<usize>()),
         })
@@ -546,7 +559,6 @@ upload-addr = \"{}/{}\"
         let dst = self.work.join("payload.json");
         std::fs::write(&dst, json.as_bytes())?;
 
-        let distribution_id = &self.secrets.cloudfront_distribution_id;
         let mut cmd = Command::new("aws");
         self.aws_creds(&mut cmd);
         run(cmd
@@ -572,8 +584,30 @@ upload-addr = \"{}/{}\"
         self.work.join("build")
     }
 
+    fn s3_artifacts_url(&self, path: &str) -> String {
+        format!(
+            "s3://{}/{}/{}",
+            self.secrets
+                .download_bucket
+                .as_deref()
+                .unwrap_or("rust-lang-ci2"),
+            self.secrets
+                .download_dir
+                .as_deref()
+                .unwrap_or("rustc-builds"),
+            path,
+        )
+    }
+
     fn aws_s3(&self) -> Command {
         let mut cmd = Command::new("aws");
+
+        // Allow using non-S3 backends with the AWS CLI.
+        if let Some(url) = &self.secrets.aws_s3_endpoint_url {
+            cmd.arg("--endpoint-url");
+            cmd.arg(url);
+        }
+
         cmd.arg("s3");
         self.aws_creds(&mut cmd);
         return cmd;
@@ -660,15 +694,24 @@ struct DistConfig {
     /// The S3 directory that release artifacts will be uploaded to.
     upload_dir: String,
 
+    /// The S3 bucket that CI artifacts will be downloaded from.
+    download_bucket: Option<String>,
+    /// The S3 directory that CI artifacts will be downloaded from.
+    download_dir: Option<String>,
+
     /// Credentials for S3 downloads/uploads. As of this writing the credentials need
     /// to have permissions to:
     ///
-    /// * Upload/download/list to the `rust-lang-ci2` bucket
+    /// * Upload/download/list to the "download" bucket specified above
     /// * Upload/download/list to the "upload" bucket specified above
     /// * Create a cloudfront invalidation of the IDs below
     aws_access_key_id: String,
     /// Secret key of the access key specified above
     aws_secret_key: String,
+
+    /// Custom Endpoint URL for S3. Set this if you want to point to an S3-compatible service
+    /// instead of the AWS one.
+    aws_s3_endpoint_url: Option<String>,
 
     /// CloudFront Distribution ID for static.rust-lang.org
     cloudfront_distribution_id: String,

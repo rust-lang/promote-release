@@ -1,0 +1,5 @@
+# This is a dummy channel file to store on the local static bucket when
+# promote-release runs, to force it to do a new release.
+
+[pkg.rust]
+version = "0.0.0-dummy (000000000 1970-01-01)"
