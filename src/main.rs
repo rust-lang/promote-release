@@ -14,7 +14,7 @@ struct Context {
     work: PathBuf,
     release: String,
     handle: Easy,
-    secrets: DistConfig,
+    secrets: SecretsDist,
     date: String,
     current_version: Option<String>,
 }
@@ -28,7 +28,7 @@ fn main() -> Result<(), Error> {
     Context {
         work: env::current_dir()?.join(env::args_os().nth(1).unwrap()),
         release: env::args().nth(2).unwrap(),
-        secrets: toml::from_str::<Config>(&secrets)?.dist,
+        secrets: toml::from_str::<Secrets>(&secrets)?.dist,
         handle: Easy::new(),
         date: output(Command::new("date").arg("+%Y-%m-%d"))?
             .trim()
@@ -695,13 +695,13 @@ fn output(cmd: &mut Command) -> Result<String, Error> {
 }
 
 #[derive(serde::Deserialize)]
-struct Config {
-    dist: DistConfig,
+struct Secrets {
+    dist: SecretsDist,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct DistConfig {
+struct SecretsDist {
     /// Path to the file containing the password of the gpg key.
     gpg_password_file: String,
 
