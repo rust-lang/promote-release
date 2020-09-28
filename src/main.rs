@@ -379,6 +379,7 @@ upload-addr = \"{}/{}\"
             );
             let recompress_start = Instant::now();
 
+            let compression_level = flate2::Compression::new(self.config.gzip_compression_level);
             to_recompress
                 .par_iter()
                 .map(|(xz_path, gz_path)| {
@@ -387,7 +388,7 @@ upload-addr = \"{}/{}\"
                     let xz = File::open(xz_path)?;
                     let mut xz = xz2::read::XzDecoder::new(xz);
                     let gz = File::create(gz_path)?;
-                    let mut gz = flate2::write::GzEncoder::new(gz, flate2::Compression::best());
+                    let mut gz = flate2::write::GzEncoder::new(gz, compression_level);
                     io::copy(&mut xz, &mut gz)?;
 
                     Ok::<(), Error>(())

@@ -5,6 +5,8 @@ use std::str::FromStr;
 const ENVIRONMENT_VARIABLE_PREFIX: &str = "PROMOTE_RELEASE_";
 
 pub(crate) struct Config {
+    /// The compression level to use when recompressing tarballs with gzip.
+    pub(crate) gzip_compression_level: u32,
     /// Custom name of the branch to start the release process from, instead of the default one.
     pub(crate) override_branch: Option<String>,
     /// Whether to skip invalidating the CloudFront distributions. This is useful when running the
@@ -18,6 +20,7 @@ pub(crate) struct Config {
 impl Config {
     pub(crate) fn from_env() -> Result<Self, Error> {
         Ok(Self {
+            gzip_compression_level: default_env("GZIP_COMPRESSION_LEVEL", 9)?,
             override_branch: maybe_env("OVERRIDE_BRANCH")?,
             skip_cloudfront_invalidations: bool_env("SKIP_CLOUDFRONT_INVALIDATIONS")?,
             skip_delete_build_dir: bool_env("SKIP_DELETE_BUILD_DIR")?,
@@ -40,6 +43,14 @@ where
             anyhow::bail!("environment variable {} is not unicode!", name)
         }
     }
+}
+
+fn default_env<R>(name: &str, default: R) -> Result<R, Error>
+where
+    R: FromStr,
+    Error: From<R::Err>,
+{
+    Ok(maybe_env(name)?.unwrap_or(default))
 }
 
 fn bool_env(name: &str) -> Result<bool, Error> {

@@ -109,6 +109,7 @@ done
 
 echo "==> starting promote-release"
 export GNUPGHOME=/persistent/gpg-home
+export PROMOTE_RELEASE_GZIP_COMPRESSION_LEVEL=1 # Faster recompressions
 export PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS=yes
 export PROMOTE_RELEASE_SKIP_DELETE_BUILD_DIR=yes
 /src/target/release/promote-release /persistent/release "${channel}" /src/local/secrets.toml
