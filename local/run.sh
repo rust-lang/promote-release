@@ -49,6 +49,39 @@ mc cp "/src/local/channel-rust-${channel}.toml" "local/static/dist/channel-rust-
 echo "==> detecting the last rustc commit on branch ${branch}"
 commit="$(git ls-remote "${RUSTC_REPO}" | grep "refs/heads/${branch}" | awk '{print($1)}')"
 
+# While the nightly and beta channels have the channel name as the "release" in
+# the archive names, the stable channel uses the actual Rust and Cargo version
+# numbers. This hacky piece of code detects them.
+if [[ "${channel}" = "stable" ]]; then
+    raw_url="https://raw.githubusercontent.com/rust-lang/rust/${commit}"
+
+    echo "==> loading rust version from src/version"
+    rust_release="$(curl --fail "${raw_url}/src/version" 2>/dev/null || true)"
+
+    # Legacy location of the Rust version. Outdated since 1.48.0.
+    if [[ "${rust_release}" = "" ]]; then
+        echo "==> loading rust version from src/bootstrap/channel.rs"
+        raw_release=$(curl --fail "${raw_url}/src/bootstrap/channel.rs" 2>&1 || true)
+        rust_release="$(echo "${raw_release}" | grep "CFG_RELEASE_NUM:" | sed -r 's/pub const CFG_RELEASE_NUM: &str = "([^"]+)";/\1/')"
+
+        if [[ "${rust_release}" = "" ]]; then
+            echo "ERR failed to get the version number"
+            exit 1
+        fi
+    fi
+
+    # Do our best to guess the cargo version
+    # This is kinda of a mess, yeah, and it will surely break. Sorry to whoever
+    # will have to fix this.
+    cargo_release="$(echo "${rust_release}" | awk '{split($0,a,".");a[2]+=1; print "0." a[2] "." a[3]}')"
+
+    echo "found rust version ${rust_release}"
+    echo "guessed cargo version ${cargo_release}"
+else
+    rust_release="${channel}"
+    cargo_release="${channel}"
+fi
+
 download() {
     file="$1"
     if ! mc stat "local/artifacts/builds/${commit}/${file}" >/dev/null 2>&1; then
@@ -62,7 +95,12 @@ download() {
 
 for target in "${DOWNLOAD_COMPONENT_TARGETS[@]}"; do
     for component in "${DOWNLOAD_COMPONENTS[@]}"; do
-        download "${component}-${channel}-${target}.tar.xz"
+        release="${rust_release}"
+        if [[ "${component}" = "cargo" ]]; then
+            release="${cargo_release}"
+        fi
+
+        download "${component}-${release}-${target}.tar.xz"
     done
 done
 for file in "${DOWNLOAD_STANDALONE[@]}"; do
