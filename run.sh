@@ -26,4 +26,4 @@ fi
 cargo build --release
 
 # Run the command inside the docker environment.
-docker-compose exec local /src/local/run.sh "${channel}"
+docker-compose exec -T local /src/local/run.sh "${channel}"
