@@ -1,3 +1,5 @@
+mod config;
+
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
@@ -10,11 +12,14 @@ use curl::easy::Easy;
 use fs2::FileExt;
 use rayon::prelude::*;
 
+use crate::config::Config;
+
 struct Context {
     work: PathBuf,
     release: String,
     handle: Easy,
     secrets: SecretsDist,
+    config: Config,
     date: String,
     current_version: Option<String>,
 }
@@ -29,6 +34,7 @@ fn main() -> Result<(), Error> {
         work: env::current_dir()?.join(env::args_os().nth(1).unwrap()),
         release: env::args().nth(2).unwrap(),
         secrets: toml::from_str::<Secrets>(&secrets)?.dist,
+        config: Config::from_env()?,
         handle: Easy::new(),
         date: output(Command::new("date").arg("+%Y-%m-%d"))?
             .trim()
@@ -43,8 +49,7 @@ impl Context {
         let _lock = self.lock()?;
         self.update_repo()?;
 
-        let override_var = env::var("PROMOTE_RELEASE_OVERRIDE_BRANCH");
-        let branch = if let Ok(branch) = override_var.as_ref() {
+        let branch = if let Some(branch) = self.config.override_branch.clone() {
             branch
         } else {
             match &self.release[..] {
@@ -53,8 +58,9 @@ impl Context {
                 "stable" => "stable",
                 _ => panic!("unknown release: {}", self.release),
             }
+            .to_string()
         };
-        self.do_release(branch)?;
+        self.do_release(&branch)?;
 
         Ok(())
     }
@@ -168,7 +174,7 @@ impl Context {
     fn configure_rust(&mut self, rev: &str) -> Result<(), Error> {
         let build = self.build_dir();
         // Avoid deleting the build directory with the cached build artifacts when working locally.
-        if std::env::var("PROMOTE_RELEASE_SKIP_DELETE_BUILD_DIR").is_err() {
+        if !self.config.skip_delete_build_dir {
             let _ = fs::remove_dir_all(&build);
         }
         if !build.exists() {
@@ -569,7 +575,7 @@ upload-addr = \"{}/{}\"
     }
 
     fn invalidate_cloudfront(&self, distribution_id: &str, paths: &[String]) -> Result<(), Error> {
-        if std::env::var("PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS").is_ok() {
+        if self.config.skip_cloudfront_invalidations {
             println!();
             println!("WARNING! Skipped CloudFront invalidation of: {:?}", paths);
             println!("Unset PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS if you're in production");
