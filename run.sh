@@ -12,7 +12,11 @@ fi
 channel="$1"
 
 container_id="$(docker-compose ps -q local)"
-container_status="$(docker inspect "${container_id}" --format "{{.State.Status}}")"
+if [[ "${container_id}" == "" ]]; then
+    container_status="missing"
+else
+    container_status="$(docker inspect "${container_id}" --format "{{.State.Status}}")"
+fi
 if [[ "${container_status}" != "running" ]]; then
     echo "Error: the local environment is not running!"
     echo "You can start it by running in a new terminal the following command:"
