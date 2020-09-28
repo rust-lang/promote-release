@@ -44,7 +44,7 @@ else
 fi
 
 echo "==> overriding files to force promote-release to run"
-mc cp /src/local/channel-rust-dummy.toml "local/static/dist/channel-rust-${channel}.toml" >/dev/null
+mc cp "/src/local/channel-rust-${channel}.toml" "local/static/dist/channel-rust-${channel}.toml" >/dev/null
 
 echo "==> detecting the last rustc commit on branch ${branch}"
 commit="$(git ls-remote "${RUSTC_REPO}" | grep "refs/heads/${branch}" | awk '{print($1)}')"
