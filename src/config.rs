@@ -5,6 +5,8 @@ use std::str::FromStr;
 const ENVIRONMENT_VARIABLE_PREFIX: &str = "PROMOTE_RELEASE_";
 
 pub(crate) struct Config {
+    /// The channel we're currently releasing.
+    pub(crate) channel: String,
     /// CloudFront distribution ID for doc.rust-lang.org.
     pub(crate) cloudfront_doc_id: String,
     /// CloudFront distribution ID for static.rust-lang.org.
@@ -49,6 +51,7 @@ pub(crate) struct Config {
 impl Config {
     pub(crate) fn from_env() -> Result<Self, Error> {
         Ok(Self {
+            channel: require_env("CHANNEL")?,
             cloudfront_doc_id: require_env("CLOUDFRONT_DOC_ID")?,
             cloudfront_static_id: require_env("CLOUDFRONT_STATIC_ID")?,
             download_bucket: require_env("DOWNLOAD_BUCKET")?,

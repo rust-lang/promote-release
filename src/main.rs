@@ -16,7 +16,6 @@ use crate::config::Config;
 
 struct Context {
     work: PathBuf,
-    release: String,
     handle: Easy,
     config: Config,
     date: String,
@@ -25,11 +24,10 @@ struct Context {
 
 // Called as:
 //
-//  $prog work/dir release-channel
+//  $prog work/dir
 fn main() -> Result<(), Error> {
     Context {
         work: env::current_dir()?.join(env::args_os().nth(1).unwrap()),
-        release: env::args().nth(2).unwrap(),
         config: Config::from_env()?,
         handle: Easy::new(),
         date: output(Command::new("date").arg("+%Y-%m-%d"))?
@@ -48,11 +46,11 @@ impl Context {
         let branch = if let Some(branch) = self.config.override_branch.clone() {
             branch
         } else {
-            match &self.release[..] {
+            match &self.config.channel[..] {
                 "nightly" => "master",
                 "beta" => "beta",
                 "stable" => "stable",
-                _ => panic!("unknown release: {}", self.release),
+                _ => panic!("unknown release: {}", self.config.channel),
             }
             .to_string()
         };
@@ -108,7 +106,7 @@ impl Context {
                 .current_dir(&self.rust_dir()),
         )?;
         let rev = rev.trim();
-        println!("{} rev is {}", self.release, rev);
+        println!("{} rev is {}", self.config.channel, rev);
 
         // Download the current live manifest for the channel we're releasing.
         // Through that we learn the current version of the release.
@@ -186,7 +184,7 @@ impl Context {
 
         run(Command::new(rust.join("configure"))
             .current_dir(&build)
-            .arg(format!("--release-channel={}", self.release)))?;
+            .arg(format!("--release-channel={}", self.config.channel)))?;
         let mut config = String::new();
         let path = build.join("config.toml");
         drop(File::open(&path).and_then(|mut f| f.read_to_string(&mut config)));
@@ -215,7 +213,7 @@ upload-addr = \"{}/{}\"
 
     fn current_version_same(&mut self, prev: &str) -> Result<bool, Error> {
         // nightly's always changing
-        if self.release == "nightly" {
+        if self.config.channel == "nightly" {
             return Ok(false);
         }
         let prev_version = prev.split(' ').next().unwrap();
@@ -286,7 +284,7 @@ upload-addr = \"{}/{}\"
     /// Note that we already don't merge PRs in rust-lang/rust that don't
     /// build cargo, so this cannot realistically fail.
     fn assert_all_components_present(&self) -> Result<(), Error> {
-        if self.release != "nightly" {
+        if self.config.channel != "nightly" {
             return Ok(());
         }
 
@@ -439,7 +437,7 @@ upload-addr = \"{}/{}\"
     }
 
     fn publish_docs(&mut self) -> Result<(), Error> {
-        let (version, upload_dir) = match &self.release[..] {
+        let (version, upload_dir) = match &self.config.channel[..] {
             "stable" => {
                 let vers = &self.current_version.as_ref().unwrap()[..];
                 (vers, "stable")
@@ -639,7 +637,10 @@ upload-addr = \"{}/{}\"
         self.handle.get(true)?;
         let addr = &self.config.upload_addr;
         let upload_dir = &self.config.upload_dir;
-        let url = format!("{}/{}/channel-rust-{}.toml", addr, upload_dir, self.release);
+        let url = format!(
+            "{}/{}/channel-rust-{}.toml",
+            addr, upload_dir, self.config.channel
+        );
         println!("downloading manifest from: {}", url);
         self.handle.url(&url)?;
         let mut result = Vec::new();
