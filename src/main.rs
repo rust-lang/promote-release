@@ -18,7 +18,6 @@ struct Context {
     work: PathBuf,
     release: String,
     handle: Easy,
-    secrets: SecretsDist,
     config: Config,
     date: String,
     current_version: Option<String>,
@@ -26,14 +25,11 @@ struct Context {
 
 // Called as:
 //
-//  $prog work/dir release-channel path/to/secrets.toml
+//  $prog work/dir release-channel
 fn main() -> Result<(), Error> {
-    let secrets = std::fs::read_to_string(env::args().nth(3).unwrap())?;
-
     Context {
         work: env::current_dir()?.join(env::args_os().nth(1).unwrap()),
         release: env::args().nth(2).unwrap(),
-        secrets: toml::from_str::<Secrets>(&secrets)?.dist,
         config: Config::from_env()?,
         handle: Easy::new(),
         date: output(Command::new("date").arg("+%Y-%m-%d"))?
@@ -596,7 +592,6 @@ upload-addr = \"{}/{}\"
         std::fs::write(&dst, json.as_bytes())?;
 
         let mut cmd = Command::new("aws");
-        self.aws_creds(&mut cmd);
         run(cmd
             .arg("cloudfront")
             .arg("create-invalidation")
@@ -637,13 +632,7 @@ upload-addr = \"{}/{}\"
         }
 
         cmd.arg("s3");
-        self.aws_creds(&mut cmd);
         cmd
-    }
-
-    fn aws_creds(&self, cmd: &mut Command) {
-        cmd.env("AWS_ACCESS_KEY_ID", &self.secrets.aws_access_key_id)
-            .env("AWS_SECRET_ACCESS_KEY", &self.secrets.aws_secret_key);
     }
 
     fn download_manifest(&mut self) -> Result<toml::Value, Error> {
@@ -691,23 +680,4 @@ fn output(cmd: &mut Command) -> Result<String, Error> {
     }
 
     Ok(String::from_utf8(output.stdout)?)
-}
-
-#[derive(serde::Deserialize)]
-struct Secrets {
-    dist: SecretsDist,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct SecretsDist {
-    /// Credentials for S3 downloads/uploads. As of this writing the credentials need
-    /// to have permissions to:
-    ///
-    /// * Upload/download/list to the "download" bucket specified above
-    /// * Upload/download/list to the "upload" bucket specified above
-    /// * Create a cloudfront invalidation of the IDs below
-    aws_access_key_id: String,
-    /// Secret key of the access key specified above
-    aws_secret_key: String,
 }

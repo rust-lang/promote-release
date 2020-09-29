@@ -111,6 +111,8 @@ echo "==> configuring the environment"
 # Point to the right GnuPG environment
 export GNUPGHOME=/persistent/gpg-home
 # Environment variables also used in prod releases
+export AWS_ACCESS_KEY_ID="access_key"
+export AWS_SECRET_ACCESS_KEY="secret_key"
 export PROMOTE_RELEASE_CLOUDFRONT_DOC_ID="id_doc_rust_lang_org"
 export PROMOTE_RELEASE_CLOUDFRONT_STATIC_ID="id_static_rust_lang_org"
 export PROMOTE_RELEASE_DOWNLOAD_BUCKET="artifacts"
@@ -126,4 +128,4 @@ export PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS="yes"
 export PROMOTE_RELEASE_SKIP_DELETE_BUILD_DIR="yes"
 
 echo "==> starting promote-release"
-/src/target/release/promote-release /persistent/release "${channel}" /src/local/secrets.toml
+/src/target/release/promote-release /persistent/release "${channel}"
