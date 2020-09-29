@@ -235,7 +235,7 @@ upload-addr = \"{}/{}\"
             for entry in archive.entries()? {
                 let entry = entry?;
                 let path = entry.path()?;
-                if let Some(path) = path.iter().skip(1).next() {
+                if let Some(path) = path.iter().nth(1) {
                     if path == Path::new("version") {
                         version_file = Some(entry);
                         break;
@@ -639,7 +639,7 @@ upload-addr = \"{}/{}\"
 
         cmd.arg("s3");
         self.aws_creds(&mut cmd);
-        return cmd;
+        cmd
     }
 
     fn aws_creds(&self, cmd: &mut Command) {

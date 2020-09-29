@@ -1,0 +1,58 @@
+---
+
+name: CI
+on:
+  push:
+    branches:
+      - master
+  pull_request: {}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the source code
+        uses: actions/checkout@v2
+
+      - name: Ensure Rust Stable is up to date
+        run: rustup self update && rustup update stable
+
+      - name: Ensure the source code is formatted
+        run: cargo fmt -- --check
+
+      - name: Ensure there are no Clippy warnings
+        run: cargo clippy -- -Dwarnings
+
+      - name: Ensure tests are passing
+        run: cargo test
+
+  local:
+    name: Local release
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, beta, nightly]
+
+    steps:
+      - name: Clone the source code
+        uses: actions/checkout@v2
+
+      - name: Ensure Rust Stable is up to date
+        run: rustup self update && rustup update stable
+
+      - name: Start the local environment
+        run: docker-compose up -d
+
+      - name: Run the local release process for channel ${{ matrix.channel }}
+        run: ./run.sh ${{ matrix.channel }}
+
+      - name: Remove the previously installed ${{ matrix.channel }} toolchain
+        run: rustup toolchain remove ${{ matrix.channel }}
+
+      - name: Install the ${{ matrix.channel }} toolchain from the local environment
+        run: rustup toolchain install ${{ matrix.channel }} --profile=minimal
+        env:
+          RUSTUP_DIST_SERVER: http://localhost:9000/static
