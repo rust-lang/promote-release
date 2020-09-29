@@ -56,3 +56,50 @@ jobs:
         run: rustup toolchain install ${{ matrix.channel }} --profile=minimal
         env:
           RUSTUP_DIST_SERVER: http://localhost:9000/static
+
+  docker:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone the source code
+        uses: actions/checkout@v2
+
+      - name: Build the Docker image
+        run: docker build -t promote-release -f prod/Dockerfile .
+
+      - name: Create a tarball of the Docker image built previously
+        run: docker save promote-release | zstd -5 - > promote-release.tar.zstd
+        if: github.event_name == 'push' && github.repository == 'rust-lang/promote-release' && github.ref == 'refs/heads/master'
+
+      - name: Upload the Docker image we built to GitHub Actions artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: docker-image
+          path: promote-release.tar.zstd
+        if: github.event_name == 'push' && github.repository == 'rust-lang/promote-release' && github.ref == 'refs/heads/master'
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    needs: [test, local, docker]
+    if: github.event_name == 'push' && github.repository == 'rust-lang/promote-release' && github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Download the Docker image previously built
+        uses: actions/download-artifact@v2
+        with:
+          name: docker-image
+
+      - name: Import the Docker image previously built
+        run: cat promote-release.tar.zstd | zstd -d | docker load
+
+      - name: Upload the Docker image to AWS ECR
+        uses: rust-lang/simpleinfra/github-actions/upload-docker-image@master
+        with:
+          image: promote-release
+          repository: promote-release
+          region: us-west-1
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
