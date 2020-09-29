@@ -208,9 +208,9 @@ gpg-password-file = \"{}\"
 upload-addr = \"{}/{}\"
 ",
             self.dl_dir().display(),
-            self.secrets.gpg_password_file,
-            self.secrets.upload_addr,
-            self.secrets.upload_dir,
+            self.config.gpg_password_file,
+            self.config.upload_addr,
+            self.config.upload_dir,
         ));
         std::fs::write(&path, new_config.as_bytes())?;
 
@@ -426,8 +426,8 @@ upload-addr = \"{}/{}\"
     }
 
     fn publish_archive(&mut self) -> Result<(), Error> {
-        let bucket = &self.secrets.upload_bucket;
-        let dir = &self.secrets.upload_dir;
+        let bucket = &self.config.upload_bucket;
+        let dir = &self.config.upload_dir;
         let dst = format!("s3://{}/{}/{}/", bucket, dir, self.date);
         run(self
             .aws_s3()
@@ -512,7 +512,7 @@ upload-addr = \"{}/{}\"
         }
 
         // Upload this to `/doc/$channel`
-        let bucket = &self.secrets.upload_bucket;
+        let bucket = &self.config.upload_bucket;
         let dst = format!("s3://{}/doc/{}/", bucket, upload_dir);
         run(self
             .aws_s3()
@@ -541,7 +541,7 @@ upload-addr = \"{}/{}\"
 
     fn invalidate_docs(&self, dir: &str) -> Result<(), Error> {
         self.invalidate_cloudfront(
-            &self.secrets.rustdoc_cf_distribution_id,
+            &self.config.cloudfront_doc_id,
             &[if dir == "stable" {
                 "/*".into()
             } else {
@@ -551,8 +551,8 @@ upload-addr = \"{}/{}\"
     }
 
     fn publish_release(&mut self) -> Result<(), Error> {
-        let bucket = &self.secrets.upload_bucket;
-        let dir = &self.secrets.upload_dir;
+        let bucket = &self.config.upload_bucket;
+        let dir = &self.config.upload_dir;
         let dst = format!("s3://{}/{}/", bucket, dir);
         run(self
             .aws_s3()
@@ -565,7 +565,7 @@ upload-addr = \"{}/{}\"
 
     fn invalidate_releases(&self) -> Result<(), Error> {
         self.invalidate_cloudfront(
-            &self.secrets.cloudfront_distribution_id,
+            &self.config.cloudfront_static_id,
             &[
                 "/dist/channel*".into(),
                 "/dist/rust*".into(),
@@ -623,15 +623,7 @@ upload-addr = \"{}/{}\"
     fn s3_artifacts_url(&self, path: &str) -> String {
         format!(
             "s3://{}/{}/{}",
-            self.secrets
-                .download_bucket
-                .as_deref()
-                .unwrap_or("rust-lang-ci2"),
-            self.secrets
-                .download_dir
-                .as_deref()
-                .unwrap_or("rustc-builds"),
-            path,
+            self.config.download_bucket, self.config.download_dir, path,
         )
     }
 
@@ -639,7 +631,7 @@ upload-addr = \"{}/{}\"
         let mut cmd = Command::new("aws");
 
         // Allow using non-S3 backends with the AWS CLI.
-        if let Some(url) = &self.secrets.aws_s3_endpoint_url {
+        if let Some(url) = &self.config.s3_endpoint_url {
             cmd.arg("--endpoint-url");
             cmd.arg(url);
         }
@@ -656,8 +648,8 @@ upload-addr = \"{}/{}\"
 
     fn download_manifest(&mut self) -> Result<toml::Value, Error> {
         self.handle.get(true)?;
-        let addr = &self.secrets.upload_addr;
-        let upload_dir = &self.secrets.upload_dir;
+        let addr = &self.config.upload_addr;
+        let upload_dir = &self.config.upload_dir;
         let url = format!("{}/{}/channel-rust-{}.toml", addr, upload_dir, self.release);
         println!("downloading manifest from: {}", url);
         self.handle.url(&url)?;
@@ -709,32 +701,6 @@ struct Secrets {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct SecretsDist {
-    /// Path to the file containing the password of the gpg key.
-    gpg_password_file: String,
-
-    /// Remote HTTP host artifacts will be uploaded to. Note that this is *not* the same as what's
-    /// configured in `config.toml` for rustbuild, it's just the *host* that we're uploading to and
-    /// going to be looking at urls from.
-    ///
-    /// This is used in a number of places such as:
-    ///
-    /// * Downloading manifestss
-    /// * Urls in manifests
-    ///
-    /// and possibly more. Note that most urls end up appending `upload-dir` below to this address
-    /// specified. This address should not have a trailing slash.
-    upload_addr: String,
-
-    /// The S3 bucket that release artifacts will be uploaded to.
-    upload_bucket: String,
-    /// The S3 directory that release artifacts will be uploaded to.
-    upload_dir: String,
-
-    /// The S3 bucket that CI artifacts will be downloaded from.
-    download_bucket: Option<String>,
-    /// The S3 directory that CI artifacts will be downloaded from.
-    download_dir: Option<String>,
-
     /// Credentials for S3 downloads/uploads. As of this writing the credentials need
     /// to have permissions to:
     ///
@@ -744,13 +710,4 @@ struct SecretsDist {
     aws_access_key_id: String,
     /// Secret key of the access key specified above
     aws_secret_key: String,
-
-    /// Custom Endpoint URL for S3. Set this if you want to point to an S3-compatible service
-    /// instead of the AWS one.
-    aws_s3_endpoint_url: Option<String>,
-
-    /// CloudFront Distribution ID for static.rust-lang.org
-    cloudfront_distribution_id: String,
-    /// CloudFront Distribution ID for doc.rust-lang.org
-    rustdoc_cf_distribution_id: String,
 }

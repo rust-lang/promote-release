@@ -107,9 +107,23 @@ for file in "${DOWNLOAD_STANDALONE[@]}"; do
     download "${file}"
 done
 
-echo "==> starting promote-release"
+echo "==> configuring the environment"
+# Point to the right GnuPG environment
 export GNUPGHOME=/persistent/gpg-home
-export PROMOTE_RELEASE_GZIP_COMPRESSION_LEVEL=1 # Faster recompressions
-export PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS=yes
-export PROMOTE_RELEASE_SKIP_DELETE_BUILD_DIR=yes
+# Environment variables also used in prod releases
+export PROMOTE_RELEASE_CLOUDFRONT_DOC_ID="id_doc_rust_lang_org"
+export PROMOTE_RELEASE_CLOUDFRONT_STATIC_ID="id_static_rust_lang_org"
+export PROMOTE_RELEASE_DOWNLOAD_BUCKET="artifacts"
+export PROMOTE_RELEASE_DOWNLOAD_DIR="builds"
+export PROMOTE_RELEASE_GPG_PASSWORD_FILE="/persistent/gpg-password"
+export PROMOTE_RELEASE_UPLOAD_ADDR="http://localhost:9000/static"
+export PROMOTE_RELEASE_UPLOAD_BUCKET="static"
+export PROMOTE_RELEASE_UPLOAD_DIR="dist"
+# Environment variables used only by local releases
+export PROMOTE_RELEASE_GZIP_COMPRESSION_LEVEL="1" # Faster recompressions
+export PROMOTE_RELEASE_S3_ENDPOINT_URL="http://minio:9000"
+export PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS="yes"
+export PROMOTE_RELEASE_SKIP_DELETE_BUILD_DIR="yes"
+
+echo "==> starting promote-release"
 /src/target/release/promote-release /persistent/release "${channel}" /src/local/secrets.toml
