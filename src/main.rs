@@ -110,7 +110,7 @@ impl Context {
 
         // Download the current live manifest for the channel we're releasing.
         // Through that we learn the current version of the release.
-        let manifest = self.download_manifest()?;
+        let manifest = self.download_top_level_manifest()?;
         let previous_version = manifest["pkg"]["rust"]["version"]
             .as_str()
             .expect("rust version not a string");
@@ -120,6 +120,18 @@ impl Context {
         // nothing for us to do, nothing has changed.
         if previous_version.contains(&rev[..7]) {
             println!("found rev in previous version, skipping");
+            return Ok(());
+        }
+
+        // During normal operations we don't want multiple releases to happen on the same channel
+        // in the same day. This check prevents that, and it can be skipped by setting an
+        // environment variable if the person doing the release really wants that.
+        if !self.config.allow_multiple_today && self.dated_manifest_exists()? {
+            println!(
+                "another release on the {} channel was done today ({})",
+                self.config.channel, self.date
+            );
+            println!("set PROMOTE_RELEASE_ALLOW_MULTIPLE_TODAY=1 to bypass the check");
             return Ok(());
         }
 
@@ -558,12 +570,7 @@ upload-addr = \"{}/{}\"
     }
 
     fn invalidate_releases(&self) -> Result<(), Error> {
-        self.invalidate_cloudfront(
-            &self.config.cloudfront_static_id,
-            &[
-                "/dist/*".into(),
-            ],
-        )
+        self.invalidate_cloudfront(&self.config.cloudfront_static_id, &["/dist/*".into()])
     }
 
     fn invalidate_cloudfront(&self, distribution_id: &str, paths: &[String]) -> Result<(), Error> {
@@ -630,15 +637,32 @@ upload-addr = \"{}/{}\"
         cmd
     }
 
-    fn download_manifest(&mut self) -> Result<toml::Value, Error> {
-        self.handle.get(true)?;
-        let addr = &self.config.upload_addr;
-        let upload_dir = &self.config.upload_dir;
+    fn download_top_level_manifest(&mut self) -> Result<toml::Value, Error> {
         let url = format!(
             "{}/{}/channel-rust-{}.toml",
-            addr, upload_dir, self.config.channel
+            self.config.upload_addr, self.config.upload_dir, self.config.channel
         );
         println!("downloading manifest from: {}", url);
+
+        Ok(self
+            .download_file(&url)?
+            .expect("manifest not found")
+            .parse()?)
+    }
+
+    fn dated_manifest_exists(&mut self) -> Result<bool, Error> {
+        let url = format!(
+            "{}/{}/{}/channel-rust-{}.toml",
+            self.config.upload_addr, self.config.upload_dir, self.date, self.config.channel,
+        );
+        println!("checking if manifest exists: {}", url);
+
+        Ok(self.download_file(&url)?.is_some())
+    }
+
+    fn download_file(&mut self, url: &str) -> Result<Option<String>, Error> {
+        self.handle.reset();
+        self.handle.get(true)?;
         self.handle.url(&url)?;
         let mut result = Vec::new();
         {
@@ -650,8 +674,11 @@ upload-addr = \"{}/{}\"
             })?;
             t.perform()?;
         }
-        assert_eq!(self.handle.response_code()?, 200);
-        Ok(String::from_utf8(result)?.parse()?)
+        match self.handle.response_code()? {
+            200 => Ok(Some(String::from_utf8(result)?)),
+            404 => Ok(None),
+            other => anyhow::bail!("unexpected status code while fetching {}: {}", url, other),
+        }
     }
 }
 
