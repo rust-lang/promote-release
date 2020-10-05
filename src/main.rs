@@ -561,10 +561,7 @@ upload-addr = \"{}/{}\"
         self.invalidate_cloudfront(
             &self.config.cloudfront_static_id,
             &[
-                "/dist/channel*".into(),
-                "/dist/rust*".into(),
-                "/dist/index*".into(),
-                "/dist/".into(),
+                "/dist/*".into(),
             ],
         )
     }
