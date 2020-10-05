@@ -33,6 +33,9 @@ pub(crate) struct Config {
     /// The S3 directory that release artifacts will be uploaded to.
     pub(crate) upload_dir: String,
 
+    /// Whether to allow multiple releases on the same channel in the same day or not.
+    pub(crate) allow_multiple_today: bool,
+
     /// The compression level to use when recompressing tarballs with gzip.
     pub(crate) gzip_compression_level: u32,
     /// Custom name of the branch to start the release process from, instead of the default one.
@@ -51,6 +54,7 @@ pub(crate) struct Config {
 impl Config {
     pub(crate) fn from_env() -> Result<Self, Error> {
         Ok(Self {
+            allow_multiple_today: bool_env("ALLOW_MULTIPLE_TODAY")?,
             channel: require_env("CHANNEL")?,
             cloudfront_doc_id: require_env("CLOUDFRONT_DOC_ID")?,
             cloudfront_static_id: require_env("CLOUDFRONT_STATIC_ID")?,
