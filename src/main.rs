@@ -179,8 +179,11 @@ impl Context {
 
     fn configure_rust(&mut self, rev: &str) -> Result<(), Error> {
         let build = self.build_dir();
-        // Avoid deleting the build directory with the cached build artifacts when working locally.
-        if !self.config.skip_delete_build_dir {
+        // Only delete the dist artifacts when running the tool locally, to avoid rebuilding
+        // bootstrap over and over again.
+        if self.config.skip_delete_build_dir {
+            let _ = fs::remove_dir_all(build.join("build/dist"));
+        } else {
             let _ = fs::remove_dir_all(&build);
         }
         if !build.exists() {
