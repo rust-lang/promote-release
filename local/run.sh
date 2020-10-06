@@ -123,6 +123,7 @@ export PROMOTE_RELEASE_UPLOAD_ADDR="http://localhost:9000/static"
 export PROMOTE_RELEASE_UPLOAD_BUCKET="static"
 export PROMOTE_RELEASE_UPLOAD_DIR="dist"
 # Environment variables used only by local releases
+export PROMOTE_RELEASE_ALLOW_MULTIPLE_TODAY="1"
 export PROMOTE_RELEASE_GZIP_COMPRESSION_LEVEL="1" # Faster recompressions
 export PROMOTE_RELEASE_S3_ENDPOINT_URL="http://minio:9000"
 export PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS="yes"
