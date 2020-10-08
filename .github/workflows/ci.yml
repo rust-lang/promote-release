@@ -49,6 +49,9 @@ jobs:
       - name: Run the local release process for channel ${{ matrix.channel }}
         run: ./run.sh ${{ matrix.channel }}
 
+      - name: Validate the generated signatures
+        run: docker-compose exec -T local /src/local/check-signature.sh ${{ matrix.channel }}
+
       - name: Remove the previously installed ${{ matrix.channel }} toolchain
         run: rustup toolchain remove ${{ matrix.channel }}
 
