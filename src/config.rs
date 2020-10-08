@@ -15,6 +15,8 @@ pub(crate) struct Config {
     pub(crate) download_bucket: String,
     /// The S3 directory that CI artifacts will be downloaded from.
     pub(crate) download_dir: String,
+    /// Path to the file containing the ASCII-armored, encrypted GPG secret key.
+    pub(crate) gpg_key_file: String,
     /// Path of the file containing the password of the GPG secret key.
     pub(crate) gpg_password_file: String,
     /// Remote HTTP host artifacts will be uploaded to. Note that this is *not* the same as what's
@@ -60,6 +62,7 @@ impl Config {
             cloudfront_static_id: require_env("CLOUDFRONT_STATIC_ID")?,
             download_bucket: require_env("DOWNLOAD_BUCKET")?,
             download_dir: require_env("DOWNLOAD_DIR")?,
+            gpg_key_file: require_env("GPG_KEY_FILE")?,
             gpg_password_file: require_env("GPG_PASSWORD_FILE")?,
             gzip_compression_level: default_env("GZIP_COMPRESSION_LEVEL", 9)?,
             override_branch: maybe_env("OVERRIDE_BRANCH")?,
