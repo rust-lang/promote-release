@@ -14,7 +14,7 @@ MINIO_SECRET_KEY="secret_key"
 MINIO_BUCKETS=( "static" "artifacts" )
 
 # Quit immediately when docker-compose receives a Ctrl+C
-trap SIGTERM exit
+trap exit EXIT
 
 # Wait until minio finished loading
 echo "waiting for minio to start"
