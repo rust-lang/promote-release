@@ -1,4 +1,5 @@
 mod config;
+mod sign;
 
 use std::env;
 use std::fs::{self, File, OpenOptions};
@@ -11,6 +12,7 @@ use anyhow::Error;
 use curl::easy::Easy;
 use fs2::FileExt;
 use rayon::prelude::*;
+use sign::Signer;
 
 use crate::config::Config;
 
@@ -154,8 +156,20 @@ impl Context {
         // Ok we've now determined that a release needs to be done. Let's
         // configure rust, build a manifest and sign the artifacts we just downloaded, and upload the
         // signatures and manifest to the CI bucket.
+
         self.configure_rust(rev)?;
-        self.sign_artifacts()?;
+
+        let is_legacy_build_manifest = !self
+            .rust_dir()
+            .join("src/tools/build-manifest/src/manifest.rs")
+            .exists();
+        println!("is legacy build-manifest: {}", is_legacy_build_manifest);
+
+        if is_legacy_build_manifest {
+            self.sign_artifacts()?;
+        } else {
+            self.build_manifest()?;
+        }
         self.upload_signatures(&rev)?;
 
         // Merge all the signatures with the download files, and then sync that
@@ -164,6 +178,12 @@ impl Context {
             let file = file?;
             fs::copy(file.path(), self.dl_dir().join(file.file_name()))?;
         }
+
+        if !is_legacy_build_manifest {
+            let signer = Signer::new(&self.config)?;
+            signer.sign_directory(&self.dl_dir())?;
+        }
+
         self.publish_archive()?;
         self.publish_docs()?;
         self.publish_release()?;
@@ -179,8 +199,11 @@ impl Context {
 
     fn configure_rust(&mut self, rev: &str) -> Result<(), Error> {
         let build = self.build_dir();
-        // Avoid deleting the build directory with the cached build artifacts when working locally.
-        if !self.config.skip_delete_build_dir {
+        // Only delete the dist artifacts when running the tool locally, to avoid rebuilding
+        // bootstrap over and over again.
+        if self.config.skip_delete_build_dir {
+            let _ = fs::remove_dir_all(build.join("build/dist"));
+        } else {
             let _ = fs::remove_dir_all(&build);
         }
         if !build.exists() {
@@ -419,6 +442,13 @@ upload-addr = \"{}/{}\"
             .current_dir(&build)
             .arg("dist")
             .arg("hash-and-sign"))
+    }
+
+    fn build_manifest(&mut self) -> Result<(), Error> {
+        run(Command::new(self.rust_dir().join("x.py"))
+            .current_dir(&self.build_dir())
+            .arg("run")
+            .arg("src/tools/build-manifest"))
     }
 
     fn upload_signatures(&mut self, rev: &str) -> Result<(), Error> {

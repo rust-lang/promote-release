@@ -118,11 +118,13 @@ export PROMOTE_RELEASE_CLOUDFRONT_DOC_ID="id_doc_rust_lang_org"
 export PROMOTE_RELEASE_CLOUDFRONT_STATIC_ID="id_static_rust_lang_org"
 export PROMOTE_RELEASE_DOWNLOAD_BUCKET="artifacts"
 export PROMOTE_RELEASE_DOWNLOAD_DIR="builds"
+export PROMOTE_RELEASE_GPG_KEY_FILE="/persistent/gpg-key"
 export PROMOTE_RELEASE_GPG_PASSWORD_FILE="/persistent/gpg-password"
 export PROMOTE_RELEASE_UPLOAD_ADDR="http://localhost:9000/static"
 export PROMOTE_RELEASE_UPLOAD_BUCKET="static"
 export PROMOTE_RELEASE_UPLOAD_DIR="dist"
 # Environment variables used only by local releases
+export PROMOTE_RELEASE_ALLOW_MULTIPLE_TODAY="1"
 export PROMOTE_RELEASE_GZIP_COMPRESSION_LEVEL="1" # Faster recompressions
 export PROMOTE_RELEASE_S3_ENDPOINT_URL="http://minio:9000"
 export PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS="yes"

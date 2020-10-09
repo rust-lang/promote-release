@@ -14,7 +14,7 @@ MINIO_SECRET_KEY="secret_key"
 MINIO_BUCKETS=( "static" "artifacts" )
 
 # Quit immediately when docker-compose receives a Ctrl+C
-trap SIGTERM exit
+trap exit EXIT
 
 # Wait until minio finished loading
 echo "waiting for minio to start"
@@ -53,6 +53,20 @@ if ! gpg --list-secret-keys 2>/dev/null | grep "promote-release@example.com" >/d
     gpg --batch --gen-key /src/local/generate-gpg-key.conf >/dev/null
 else
     echo "reusing existing gpg key"
+fi
+
+# Ensure there is a copy of the key on disk
+if ! [[ -f /persistent/gpg-key ]]; then
+    echo "dumping the gpg key to disk"
+    cat /persistent/gpg-password | gpg \
+        --pinentry-mode loopback \
+        --passphrase-fd 0 \
+        --batch \
+        --armor \
+        --export-secret-key promote-release@example.com \
+        > /persistent/gpg-key
+else
+    echo "gpg key already dumped to disk"
 fi
 
 cat <<EOF
