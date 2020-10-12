@@ -170,7 +170,6 @@ impl Context {
         } else {
             self.build_manifest()?;
         }
-        self.upload_signatures(&rev)?;
 
         // Merge all the signatures with the download files, and then sync that
         // whole dir up to the release archives
@@ -449,16 +448,6 @@ upload-addr = \"{}/{}\"
             .current_dir(&self.build_dir())
             .arg("run")
             .arg("src/tools/build-manifest"))
-    }
-
-    fn upload_signatures(&mut self, rev: &str) -> Result<(), Error> {
-        run(self
-            .aws_s3()
-            .arg("cp")
-            .arg("--recursive")
-            .arg("--only-show-errors")
-            .arg(self.build_dir().join("build/dist/"))
-            .arg(&self.s3_artifacts_url(&format!("{}/", rev))))
     }
 
     fn publish_archive(&mut self) -> Result<(), Error> {
