@@ -308,7 +308,6 @@ upload-addr = \"{}/{}\"
             }
         }
 
-        println!("components in this nightly {:?}", components);
         assert!(components.iter().any(|s| s.starts_with("rustc-")));
         assert!(components.iter().any(|s| s.starts_with("rust-std-")));
         assert!(components.iter().any(|s| s.starts_with("cargo-")));
