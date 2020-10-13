@@ -35,6 +35,7 @@ DOWNLOAD_STANDALONE=(
 )
 
 channel="$1"
+override_commit="$2"
 
 # Nightly is on the default branch
 if [[ "${channel}" = "nightly" ]]; then
@@ -46,8 +47,13 @@ fi
 echo "==> overriding files to force promote-release to run"
 mc cp "/src/local/channel-rust-${channel}.toml" "local/static/dist/channel-rust-${channel}.toml" >/dev/null
 
-echo "==> detecting the last rustc commit on branch ${branch}"
-commit="$(git ls-remote "${RUSTC_REPO}" | grep "refs/heads/${branch}" | awk '{print($1)}')"
+if [[ "${override_commit}" = "" ]]; then
+    echo "==> detecting the last rustc commit on branch ${branch}"
+    commit="$(git ls-remote "${RUSTC_REPO}" | grep "refs/heads/${branch}" | awk '{print($1)}')"
+else
+    echo "=>> using overridden commit ${override_commit}"
+    commit="${override_commit}"
+fi
 
 # While the nightly and beta channels have the channel name as the "release" in
 # the archive names, the stable channel uses the actual Rust and Cargo version
@@ -129,6 +135,10 @@ export PROMOTE_RELEASE_GZIP_COMPRESSION_LEVEL="1" # Faster recompressions
 export PROMOTE_RELEASE_S3_ENDPOINT_URL="http://minio:9000"
 export PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS="yes"
 export PROMOTE_RELEASE_SKIP_DELETE_BUILD_DIR="yes"
+# Conditional environment variables
+if [[ "${override_commit}" != "" ]]; then
+    export PROMOTE_RELEASE_OVERRIDE_COMMIT="${override_commit}"
+fi
 
 echo "==> starting promote-release"
 /src/target/release/promote-release /persistent/release "${channel}"

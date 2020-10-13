@@ -31,6 +31,13 @@ environment variable while calling `rustup`:
 RUSTUP_DIST_SERVER="http://localhost:9000/static"
 ```
 
+You can also release a specific commit by providing its full hash as the second
+argument of `./run.sh`:
+
+```
+./run.sh nightly 0000000000000000000000000000000000000000
+```
+
 ### Adding additional files to the local release
 
 To save on time and bandwidth, when running a release locally the tooling won't
