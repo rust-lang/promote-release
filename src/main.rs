@@ -28,19 +28,26 @@ struct Context {
 //
 //  $prog work/dir
 fn main() -> Result<(), Error> {
-    Context {
-        work: env::current_dir()?.join(env::args_os().nth(1).unwrap()),
-        config: Config::from_env()?,
-        handle: Easy::new(),
-        date: output(Command::new("date").arg("+%Y-%m-%d"))?
-            .trim()
-            .to_string(),
-        current_version: None,
-    }
-    .run()
+    let mut context = Context::new(
+        env::current_dir()?.join(env::args_os().nth(1).unwrap()),
+        Config::from_env()?,
+    )?;
+    context.run()
 }
 
 impl Context {
+    fn new(work: PathBuf, config: Config) -> Result<Self, Error> {
+        Ok(Context {
+            work,
+            config,
+            handle: Easy::new(),
+            date: output(Command::new("date").arg("+%Y-%m-%d"))?
+                .trim()
+                .to_string(),
+            current_version: None,
+        })
+    }
+
     fn run(&mut self) -> Result<(), Error> {
         let _lock = self.lock()?;
         self.update_repo()?;
