@@ -49,6 +49,8 @@ pub(crate) struct Config {
     pub(crate) gpg_key_file: String,
     /// Path of the file containing the password of the GPG secret key.
     pub(crate) gpg_password_file: String,
+    /// URL of the git repository containing the Rust source code.
+    pub(crate) repository: String,
     /// Remote HTTP host artifacts will be uploaded to. Note that this is *not* the same as what's
     /// configured in `config.toml` for rustbuild, it's just the *host* that we're uploading to and
     /// going to be looking at urls from.
@@ -96,6 +98,7 @@ impl Config {
             gpg_password_file: require_env("GPG_PASSWORD_FILE")?,
             gzip_compression_level: default_env("GZIP_COMPRESSION_LEVEL", 9)?,
             override_commit: maybe_env("OVERRIDE_COMMIT")?,
+            repository: default_env("REPOSITORY", "https://github.com/rust-lang/rust.git".into())?,
             s3_endpoint_url: maybe_env("S3_ENDPOINT_URL")?,
             skip_cloudfront_invalidations: bool_env("SKIP_CLOUDFRONT_INVALIDATIONS")?,
             skip_delete_build_dir: bool_env("SKIP_DELETE_BUILD_DIR")?,

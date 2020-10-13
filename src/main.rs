@@ -87,23 +87,30 @@ impl Context {
 
     fn get_commit_sha(&self) -> Result<String, Error> {
         if let Some(commit) = self.config.override_commit.clone() {
-            Ok(commit)
-        } else {
-            let branch = match self.config.channel {
-                Channel::Nightly => "master",
-                Channel::Beta => "beta",
-                Channel::Stable => "stable",
-            };
-            // Learn the precise rev of the remote branch, this'll guide what we
-            // download.
-            let rev = output(
-                Command::new("git")
-                    .arg("rev-parse")
-                    .arg(format!("origin/{}", branch))
-                    .current_dir(&self.rust_dir()),
-            )?;
-            Ok(rev.trim().to_string())
+            return Ok(commit);
         }
+
+        let git_ref = match self.config.channel {
+            Channel::Nightly => "refs/heads/master",
+            Channel::Beta => "refs/heads/beta",
+            Channel::Stable => "refs/heads/stable",
+        };
+
+        // git2 requires a git repository to be able to connect to a remote and fetch metadata, so
+        // this creates an empty repository in a temporary directory. It will be deleted once the
+        // function returns.
+        let temp = tempfile::tempdir()?;
+        let repo = git2::Repository::init(temp.path())?;
+
+        let mut remote = repo.remote("origin", &self.config.repository)?;
+        remote.connect(git2::Direction::Fetch)?;
+
+        for head in remote.list()? {
+            if head.name() == git_ref {
+                return Ok(hex::encode(head.oid().as_bytes()));
+            }
+        }
+        anyhow::bail!("missing git ref in {}: {}", self.config.repository, git_ref);
     }
 
     fn do_release(&mut self) -> Result<(), Error> {
@@ -157,7 +164,7 @@ impl Context {
         // configure rust, build a manifest and sign the artifacts we just downloaded, and upload the
         // signatures and manifest to the CI bucket.
 
-        self.configure_rust(rev)?;
+        self.configure_rust(&rev)?;
 
         let is_legacy_build_manifest = !self
             .rust_dir()
