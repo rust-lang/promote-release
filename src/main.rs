@@ -44,18 +44,7 @@ impl Context {
     fn run(&mut self) -> Result<(), Error> {
         let _lock = self.lock()?;
         self.update_repo()?;
-
-        let branch = if let Some(branch) = self.config.override_branch.clone() {
-            branch
-        } else {
-            match self.config.channel {
-                Channel::Nightly => "master",
-                Channel::Beta => "beta",
-                Channel::Stable => "stable",
-            }
-            .to_string()
-        };
-        self.do_release(&branch)?;
+        self.do_release()?;
 
         Ok(())
     }
@@ -96,17 +85,29 @@ impl Context {
         Ok(())
     }
 
-    /// Does a release for the `branch` specified.
-    fn do_release(&mut self, branch: &str) -> Result<(), Error> {
-        // Learn the precise rev of the remote branch, this'll guide what we
-        // download.
-        let rev = output(
-            Command::new("git")
-                .arg("rev-parse")
-                .arg(format!("origin/{}", branch))
-                .current_dir(&self.rust_dir()),
-        )?;
-        let rev = rev.trim();
+    fn get_commit_sha(&self) -> Result<String, Error> {
+        if let Some(commit) = self.config.override_commit.clone() {
+            Ok(commit)
+        } else {
+            let branch = match self.config.channel {
+                Channel::Nightly => "master",
+                Channel::Beta => "beta",
+                Channel::Stable => "stable",
+            };
+            // Learn the precise rev of the remote branch, this'll guide what we
+            // download.
+            let rev = output(
+                Command::new("git")
+                    .arg("rev-parse")
+                    .arg(format!("origin/{}", branch))
+                    .current_dir(&self.rust_dir()),
+            )?;
+            Ok(rev.trim().to_string())
+        }
+    }
+
+    fn do_release(&mut self) -> Result<(), Error> {
+        let rev = self.get_commit_sha()?;
         println!("{} rev is {}", self.config.channel, rev);
 
         // Download the current live manifest for the channel we're releasing.

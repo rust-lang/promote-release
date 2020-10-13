@@ -70,8 +70,8 @@ pub(crate) struct Config {
 
     /// The compression level to use when recompressing tarballs with gzip.
     pub(crate) gzip_compression_level: u32,
-    /// Custom name of the branch to start the release process from, instead of the default one.
-    pub(crate) override_branch: Option<String>,
+    /// Custom sha of the commit to release, instead of the latest commit in the channel's branch.
+    pub(crate) override_commit: Option<String>,
     /// Custom Endpoint URL for S3. Set this if you want to point to an S3-compatible service
     /// instead of the AWS one.
     pub(crate) s3_endpoint_url: Option<String>,
@@ -95,7 +95,7 @@ impl Config {
             gpg_key_file: require_env("GPG_KEY_FILE")?,
             gpg_password_file: require_env("GPG_PASSWORD_FILE")?,
             gzip_compression_level: default_env("GZIP_COMPRESSION_LEVEL", 9)?,
-            override_branch: maybe_env("OVERRIDE_BRANCH")?,
+            override_commit: maybe_env("OVERRIDE_COMMIT")?,
             s3_endpoint_url: maybe_env("S3_ENDPOINT_URL")?,
             skip_cloudfront_invalidations: bool_env("SKIP_CLOUDFRONT_INVALIDATIONS")?,
             skip_delete_build_dir: bool_env("SKIP_DELETE_BUILD_DIR")?,
