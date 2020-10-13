@@ -14,7 +14,7 @@ use fs2::FileExt;
 use rayon::prelude::*;
 use sign::Signer;
 
-use crate::config::Config;
+use crate::config::{Channel, Config};
 
 struct Context {
     work: PathBuf,
@@ -48,11 +48,10 @@ impl Context {
         let branch = if let Some(branch) = self.config.override_branch.clone() {
             branch
         } else {
-            match &self.config.channel[..] {
-                "nightly" => "master",
-                "beta" => "beta",
-                "stable" => "stable",
-                _ => panic!("unknown release: {}", self.config.channel),
+            match self.config.channel {
+                Channel::Nightly => "master",
+                Channel::Beta => "beta",
+                Channel::Stable => "stable",
             }
             .to_string()
         };
@@ -247,7 +246,7 @@ upload-addr = \"{}/{}\"
 
     fn current_version_same(&mut self, prev: &str) -> Result<bool, Error> {
         // nightly's always changing
-        if self.config.channel == "nightly" {
+        if self.config.channel == Channel::Nightly {
             return Ok(false);
         }
         let prev_version = prev.split(' ').next().unwrap();
@@ -318,7 +317,7 @@ upload-addr = \"{}/{}\"
     /// Note that we already don't merge PRs in rust-lang/rust that don't
     /// build cargo, so this cannot realistically fail.
     fn assert_all_components_present(&self) -> Result<(), Error> {
-        if self.config.channel != "nightly" {
+        if self.config.channel != Channel::Nightly {
             return Ok(());
         }
 
@@ -467,14 +466,13 @@ upload-addr = \"{}/{}\"
     }
 
     fn publish_docs(&mut self) -> Result<(), Error> {
-        let (version, upload_dir) = match &self.config.channel[..] {
-            "stable" => {
+        let (version, upload_dir) = match self.config.channel {
+            Channel::Stable => {
                 let vers = &self.current_version.as_ref().unwrap()[..];
                 (vers, "stable")
             }
-            "beta" => ("beta", "beta"),
-            "nightly" => ("nightly", "nightly"),
-            _ => panic!(),
+            Channel::Beta => ("beta", "beta"),
+            Channel::Nightly => ("nightly", "nightly"),
         };
 
         // Pull out HTML documentation from one of the `rust-docs-*` tarballs.
