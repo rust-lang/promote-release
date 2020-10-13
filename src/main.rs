@@ -12,6 +12,7 @@ use anyhow::Error;
 use curl::easy::Easy;
 use fs2::FileExt;
 use rayon::prelude::*;
+use chrono::Utc;
 use sign::Signer;
 
 use crate::config::{Channel, Config};
@@ -37,13 +38,13 @@ fn main() -> Result<(), Error> {
 
 impl Context {
     fn new(work: PathBuf, config: Config) -> Result<Self, Error> {
+        let date = Utc::now().format("%Y-%m-%d").to_string();
+
         Ok(Context {
             work,
             config,
+            date,
             handle: Easy::new(),
-            date: output(Command::new("date").arg("+%Y-%m-%d"))?
-                .trim()
-                .to_string(),
             current_version: None,
         })
     }
@@ -720,20 +721,4 @@ fn run(cmd: &mut Command) -> Result<(), Error> {
         anyhow::bail!("failed command:{:?}\n:{}", cmd, status);
     }
     Ok(())
-}
-
-fn output(cmd: &mut Command) -> Result<String, Error> {
-    println!("running {:?}", cmd);
-    let output = cmd.output()?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "failed command:{:?}\n:{}\n\n{}\n\n{}",
-            cmd,
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-    }
-
-    Ok(String::from_utf8(output.stdout)?)
 }
