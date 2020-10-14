@@ -92,8 +92,9 @@ download() {
     file="$1"
     if ! mc stat "local/artifacts/builds/${commit}/${file}" >/dev/null 2>&1; then
         echo "==> copying ${file} from ci-artifacts.rust-lang.org"
-        curl -Lo /tmp/component "${DOWNLOAD_BASE}/${commit}/${file}" --fail
-        mc cp /tmp/component "local/artifacts/builds/${commit}/${file}" >/dev/null
+        if curl -Lo /tmp/component "${DOWNLOAD_BASE}/${commit}/${file}" --fail; then
+            mc cp /tmp/component "local/artifacts/builds/${commit}/${file}" >/dev/null
+        fi
     else
         echo "==> reusing cached ${file}"
     fi
