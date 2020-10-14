@@ -13,6 +13,7 @@ RUSTC_DEFAULT_BRANCH="master"
 DOWNLOAD_BASE="https://ci-artifacts.rust-lang.org/rustc-builds"
 # Rustup components to download for each target we want to release.
 DOWNLOAD_COMPONENTS=(
+    "build-manifest"
     "cargo"
     "rust"
     "rust-docs"
