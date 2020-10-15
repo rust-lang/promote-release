@@ -1,3 +1,4 @@
+mod build_manifest;
 mod config;
 mod sign;
 
@@ -9,12 +10,17 @@ use std::process::Command;
 use std::time::Instant;
 
 use anyhow::Error;
+use build_manifest::BuildManifest;
+use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
 use rayon::prelude::*;
 use sign::Signer;
+use xz2::read::XzDecoder;
 
-use crate::config::Config;
+use crate::config::{Channel, Config};
+
+const TARGET: &str = env!("TARGET");
 
 struct Context {
     work: PathBuf,
@@ -28,35 +34,29 @@ struct Context {
 //
 //  $prog work/dir
 fn main() -> Result<(), Error> {
-    Context {
-        work: env::current_dir()?.join(env::args_os().nth(1).unwrap()),
-        config: Config::from_env()?,
-        handle: Easy::new(),
-        date: output(Command::new("date").arg("+%Y-%m-%d"))?
-            .trim()
-            .to_string(),
-        current_version: None,
-    }
-    .run()
+    let mut context = Context::new(
+        env::current_dir()?.join(env::args_os().nth(1).unwrap()),
+        Config::from_env()?,
+    )?;
+    context.run()
 }
 
 impl Context {
+    fn new(work: PathBuf, config: Config) -> Result<Self, Error> {
+        let date = Utc::now().format("%Y-%m-%d").to_string();
+
+        Ok(Context {
+            work,
+            config,
+            date,
+            handle: Easy::new(),
+            current_version: None,
+        })
+    }
+
     fn run(&mut self) -> Result<(), Error> {
         let _lock = self.lock()?;
-        self.update_repo()?;
-
-        let branch = if let Some(branch) = self.config.override_branch.clone() {
-            branch
-        } else {
-            match &self.config.channel[..] {
-                "nightly" => "master",
-                "beta" => "beta",
-                "stable" => "stable",
-                _ => panic!("unknown release: {}", self.config.channel),
-            }
-            .to_string()
-        };
-        self.do_release(&branch)?;
+        self.do_release()?;
 
         Ok(())
     }
@@ -77,7 +77,7 @@ impl Context {
 
     /// Update the rust repository we have cached, either cloning a fresh one or
     /// fetching remote references
-    fn update_repo(&mut self) -> Result<(), Error> {
+    fn legacy_update_repo(&mut self) -> Result<(), Error> {
         // Clone/update the repo
         let dir = self.rust_dir();
         if dir.is_dir() {
@@ -97,17 +97,36 @@ impl Context {
         Ok(())
     }
 
-    /// Does a release for the `branch` specified.
-    fn do_release(&mut self, branch: &str) -> Result<(), Error> {
-        // Learn the precise rev of the remote branch, this'll guide what we
-        // download.
-        let rev = output(
-            Command::new("git")
-                .arg("rev-parse")
-                .arg(format!("origin/{}", branch))
-                .current_dir(&self.rust_dir()),
-        )?;
-        let rev = rev.trim();
+    fn get_commit_sha(&self) -> Result<String, Error> {
+        if let Some(commit) = self.config.override_commit.clone() {
+            return Ok(commit);
+        }
+
+        let git_ref = match self.config.channel {
+            Channel::Nightly => "refs/heads/master",
+            Channel::Beta => "refs/heads/beta",
+            Channel::Stable => "refs/heads/stable",
+        };
+
+        // git2 requires a git repository to be able to connect to a remote and fetch metadata, so
+        // this creates an empty repository in a temporary directory. It will be deleted once the
+        // function returns.
+        let temp = tempfile::tempdir()?;
+        let repo = git2::Repository::init(temp.path())?;
+
+        let mut remote = repo.remote("origin", &self.config.repository)?;
+        remote.connect(git2::Direction::Fetch)?;
+
+        for head in remote.list()? {
+            if head.name() == git_ref {
+                return Ok(hex::encode(head.oid().as_bytes()));
+            }
+        }
+        anyhow::bail!("missing git ref in {}: {}", self.config.repository, git_ref);
+    }
+
+    fn do_release(&mut self) -> Result<(), Error> {
+        let rev = self.get_commit_sha()?;
         println!("{} rev is {}", self.config.channel, rev);
 
         // Download the current live manifest for the channel we're releasing.
@@ -153,34 +172,23 @@ impl Context {
 
         self.assert_all_components_present()?;
 
-        // Ok we've now determined that a release needs to be done. Let's
-        // configure rust, build a manifest and sign the artifacts we just downloaded, and upload the
-        // signatures and manifest to the CI bucket.
+        // Ok we've now determined that a release needs to be done.
 
-        self.configure_rust(rev)?;
+        let build_manifest = BuildManifest::new(self);
+        if build_manifest.exists() {
+            // Generate the channel manifest
+            build_manifest.run()?;
 
-        let is_legacy_build_manifest = !self
-            .rust_dir()
-            .join("src/tools/build-manifest/src/manifest.rs")
-            .exists();
-        println!("is legacy build-manifest: {}", is_legacy_build_manifest);
-
-        if is_legacy_build_manifest {
-            self.sign_artifacts()?;
-        } else {
-            self.build_manifest()?;
-        }
-
-        // Merge all the signatures with the download files, and then sync that
-        // whole dir up to the release archives
-        for file in self.build_dir().join("build/dist/").read_dir()? {
-            let file = file?;
-            fs::copy(file.path(), self.dl_dir().join(file.file_name()))?;
-        }
-
-        if !is_legacy_build_manifest {
+            // Generate checksums and sign all the files we're about to ship.
             let signer = Signer::new(&self.config)?;
             signer.sign_directory(&self.dl_dir())?;
+        } else {
+            // For releases using the legacy build-manifest, we need to clone the rustc monorepo
+            // and invoke `./x.py dist hash-and-sign` in it. This won't be needed after 1.48.0 is
+            // out in the stable channel.
+            self.legacy_update_repo()?;
+            self.legacy_configure_rust(&rev)?;
+            self.legacy_sign_artifacts()?;
         }
 
         self.publish_archive()?;
@@ -196,7 +204,7 @@ impl Context {
         Ok(())
     }
 
-    fn configure_rust(&mut self, rev: &str) -> Result<(), Error> {
+    fn legacy_configure_rust(&mut self, rev: &str) -> Result<(), Error> {
         let build = self.build_dir();
         // Only delete the dist artifacts when running the tool locally, to avoid rebuilding
         // bootstrap over and over again.
@@ -247,7 +255,7 @@ upload-addr = \"{}/{}\"
 
     fn current_version_same(&mut self, prev: &str) -> Result<bool, Error> {
         // nightly's always changing
-        if self.config.channel == "nightly" {
+        if self.config.channel == Channel::Nightly {
             return Ok(false);
         }
         let prev_version = prev.split(' ').next().unwrap();
@@ -318,7 +326,7 @@ upload-addr = \"{}/{}\"
     /// Note that we already don't merge PRs in rust-lang/rust that don't
     /// build cargo, so this cannot realistically fail.
     fn assert_all_components_present(&self) -> Result<(), Error> {
-        if self.config.channel != "nightly" {
+        if self.config.channel != Channel::Nightly {
             return Ok(());
         }
 
@@ -413,7 +421,7 @@ upload-addr = \"{}/{}\"
                     println!("recompressing {}...", gz_path.display());
 
                     let xz = File::open(xz_path)?;
-                    let mut xz = xz2::read::XzDecoder::new(xz);
+                    let mut xz = XzDecoder::new(xz);
                     let gz = File::create(gz_path)?;
                     let mut gz = flate2::write::GzEncoder::new(gz, compression_level);
                     io::copy(&mut xz, &mut gz)?;
@@ -433,20 +441,22 @@ upload-addr = \"{}/{}\"
     }
 
     /// Create manifest and sign the artifacts.
-    fn sign_artifacts(&mut self) -> Result<(), Error> {
+    fn legacy_sign_artifacts(&mut self) -> Result<(), Error> {
         let build = self.build_dir();
         // This calls `src/tools/build-manifest` from the rustc repo.
         run(Command::new(self.rust_dir().join("x.py"))
             .current_dir(&build)
             .arg("dist")
-            .arg("hash-and-sign"))
-    }
+            .arg("hash-and-sign"))?;
 
-    fn build_manifest(&mut self) -> Result<(), Error> {
-        run(Command::new(self.rust_dir().join("x.py"))
-            .current_dir(&self.build_dir())
-            .arg("run")
-            .arg("src/tools/build-manifest"))
+        // Merge all the signatures with the download files, and then sync that
+        // whole dir up to the release archives
+        for file in self.build_dir().join("build/dist/").read_dir()? {
+            let file = file?;
+            fs::copy(file.path(), self.dl_dir().join(file.file_name()))?;
+        }
+
+        Ok(())
     }
 
     fn publish_archive(&mut self) -> Result<(), Error> {
@@ -467,14 +477,13 @@ upload-addr = \"{}/{}\"
     }
 
     fn publish_docs(&mut self) -> Result<(), Error> {
-        let (version, upload_dir) = match &self.config.channel[..] {
-            "stable" => {
+        let (version, upload_dir) = match self.config.channel {
+            Channel::Stable => {
                 let vers = &self.current_version.as_ref().unwrap()[..];
                 (vers, "stable")
             }
-            "beta" => ("beta", "beta"),
-            "nightly" => ("nightly", "nightly"),
-            _ => panic!(),
+            Channel::Beta => ("beta", "beta"),
+            Channel::Nightly => ("nightly", "nightly"),
         };
 
         // Pull out HTML documentation from one of the `rust-docs-*` tarballs.
@@ -707,20 +716,4 @@ fn run(cmd: &mut Command) -> Result<(), Error> {
         anyhow::bail!("failed command:{:?}\n:{}", cmd, status);
     }
     Ok(())
-}
-
-fn output(cmd: &mut Command) -> Result<String, Error> {
-    println!("running {:?}", cmd);
-    let output = cmd.output()?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "failed command:{:?}\n:{}\n\n{}\n\n{}",
-            cmd,
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-    }
-
-    Ok(String::from_utf8(output.stdout)?)
 }

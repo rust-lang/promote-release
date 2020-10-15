@@ -13,6 +13,7 @@ RUSTC_DEFAULT_BRANCH="master"
 DOWNLOAD_BASE="https://ci-artifacts.rust-lang.org/rustc-builds"
 # Rustup components to download for each target we want to release.
 DOWNLOAD_COMPONENTS=(
+    "build-manifest"
     "cargo"
     "rust"
     "rust-docs"
@@ -35,6 +36,7 @@ DOWNLOAD_STANDALONE=(
 )
 
 channel="$1"
+override_commit="$2"
 
 # Nightly is on the default branch
 if [[ "${channel}" = "nightly" ]]; then
@@ -46,8 +48,13 @@ fi
 echo "==> overriding files to force promote-release to run"
 mc cp "/src/local/channel-rust-${channel}.toml" "local/static/dist/channel-rust-${channel}.toml" >/dev/null
 
-echo "==> detecting the last rustc commit on branch ${branch}"
-commit="$(git ls-remote "${RUSTC_REPO}" | grep "refs/heads/${branch}" | awk '{print($1)}')"
+if [[ "${override_commit}" = "" ]]; then
+    echo "==> detecting the last rustc commit on branch ${branch}"
+    commit="$(git ls-remote "${RUSTC_REPO}" | grep "refs/heads/${branch}" | awk '{print($1)}')"
+else
+    echo "=>> using overridden commit ${override_commit}"
+    commit="${override_commit}"
+fi
 
 # While the nightly and beta channels have the channel name as the "release" in
 # the archive names, the stable channel uses the actual Rust and Cargo version
@@ -86,8 +93,9 @@ download() {
     file="$1"
     if ! mc stat "local/artifacts/builds/${commit}/${file}" >/dev/null 2>&1; then
         echo "==> copying ${file} from ci-artifacts.rust-lang.org"
-        curl -Lo /tmp/component "${DOWNLOAD_BASE}/${commit}/${file}" --fail
-        mc cp /tmp/component "local/artifacts/builds/${commit}/${file}" >/dev/null
+        if curl -Lo /tmp/component "${DOWNLOAD_BASE}/${commit}/${file}" --fail; then
+            mc cp /tmp/component "local/artifacts/builds/${commit}/${file}" >/dev/null
+        fi
     else
         echo "==> reusing cached ${file}"
     fi
@@ -129,6 +137,10 @@ export PROMOTE_RELEASE_GZIP_COMPRESSION_LEVEL="1" # Faster recompressions
 export PROMOTE_RELEASE_S3_ENDPOINT_URL="http://minio:9000"
 export PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS="yes"
 export PROMOTE_RELEASE_SKIP_DELETE_BUILD_DIR="yes"
+# Conditional environment variables
+if [[ "${override_commit}" != "" ]]; then
+    export PROMOTE_RELEASE_OVERRIDE_COMMIT="${override_commit}"
+fi
 
 echo "==> starting promote-release"
 /src/target/release/promote-release /persistent/release "${channel}"

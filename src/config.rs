@@ -4,9 +4,39 @@ use std::str::FromStr;
 
 const ENVIRONMENT_VARIABLE_PREFIX: &str = "PROMOTE_RELEASE_";
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Channel {
+    Stable,
+    Beta,
+    Nightly,
+}
+
+impl FromStr for Channel {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
+            "stable" => Ok(Channel::Stable),
+            "beta" => Ok(Channel::Beta),
+            "nightly" => Ok(Channel::Nightly),
+            _ => anyhow::bail!("unknown channel: {}", input),
+        }
+    }
+}
+
+impl std::fmt::Display for Channel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Channel::Stable => "stable",
+            Channel::Beta => "beta",
+            Channel::Nightly => "nightly",
+        })
+    }
+}
+
 pub(crate) struct Config {
     /// The channel we're currently releasing.
-    pub(crate) channel: String,
+    pub(crate) channel: Channel,
     /// CloudFront distribution ID for doc.rust-lang.org.
     pub(crate) cloudfront_doc_id: String,
     /// CloudFront distribution ID for static.rust-lang.org.
@@ -19,6 +49,8 @@ pub(crate) struct Config {
     pub(crate) gpg_key_file: String,
     /// Path of the file containing the password of the GPG secret key.
     pub(crate) gpg_password_file: String,
+    /// URL of the git repository containing the Rust source code.
+    pub(crate) repository: String,
     /// Remote HTTP host artifacts will be uploaded to. Note that this is *not* the same as what's
     /// configured in `config.toml` for rustbuild, it's just the *host* that we're uploading to and
     /// going to be looking at urls from.
@@ -40,8 +72,8 @@ pub(crate) struct Config {
 
     /// The compression level to use when recompressing tarballs with gzip.
     pub(crate) gzip_compression_level: u32,
-    /// Custom name of the branch to start the release process from, instead of the default one.
-    pub(crate) override_branch: Option<String>,
+    /// Custom sha of the commit to release, instead of the latest commit in the channel's branch.
+    pub(crate) override_commit: Option<String>,
     /// Custom Endpoint URL for S3. Set this if you want to point to an S3-compatible service
     /// instead of the AWS one.
     pub(crate) s3_endpoint_url: Option<String>,
@@ -65,7 +97,8 @@ impl Config {
             gpg_key_file: require_env("GPG_KEY_FILE")?,
             gpg_password_file: require_env("GPG_PASSWORD_FILE")?,
             gzip_compression_level: default_env("GZIP_COMPRESSION_LEVEL", 9)?,
-            override_branch: maybe_env("OVERRIDE_BRANCH")?,
+            override_commit: maybe_env("OVERRIDE_COMMIT")?,
+            repository: default_env("REPOSITORY", "https://github.com/rust-lang/rust.git".into())?,
             s3_endpoint_url: maybe_env("S3_ENDPOINT_URL")?,
             skip_cloudfront_invalidations: bool_env("SKIP_CLOUDFRONT_INVALIDATIONS")?,
             skip_delete_build_dir: bool_env("SKIP_DELETE_BUILD_DIR")?,

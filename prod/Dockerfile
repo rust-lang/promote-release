@@ -22,7 +22,7 @@ ENV PATH=/root/.cargo/bin:$PATH
 # caching, and it works by copying the Cargo.{toml,lock} with dummy source code
 # and doing a full build with it.
 WORKDIR /tmp/source
-COPY Cargo.lock Cargo.toml /tmp/source/
+COPY Cargo.lock Cargo.toml build.rs /tmp/source/
 RUN mkdir -p /tmp/source/src && \
     echo "fn main() {}" > /tmp/source/src/main.rs
 RUN cargo fetch
