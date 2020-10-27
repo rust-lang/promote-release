@@ -2,12 +2,12 @@ mod build_manifest;
 mod config;
 mod sign;
 
-use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
+use std::{collections::HashSet, env};
 
 use anyhow::Error;
 use build_manifest::BuildManifest;
@@ -21,6 +21,14 @@ use xz2::read::XzDecoder;
 use crate::config::{Channel, Config};
 
 const TARGET: &str = env!("TARGET");
+
+/// List of files that should not be pruned even if they're not referenced in the manifest.
+const AVOID_PRUNING_UNUSED_FILES: &[&str] = &[
+    // Source code tarballs, which are not distributed through rustup and thus are mistakenly
+    // marked as "unused" by build-manifest.
+    "rustc-{release}-src.tar.gz",
+    "rustc-{release}-src.tar.xz",
+];
 
 struct Context {
     work: PathBuf,
@@ -177,7 +185,14 @@ impl Context {
         let build_manifest = BuildManifest::new(self);
         if build_manifest.exists() {
             // Generate the channel manifest
-            build_manifest.run()?;
+            let execution = build_manifest.run()?;
+
+            if self.config.wip_prune_unused_files {
+                // Removes files that we are not shipping from the files we're about to upload.
+                if let Some(shipped_files) = &execution.shipped_files {
+                    self.prune_unused_files(&shipped_files)?;
+                }
+            }
 
             // Generate checksums and sign all the files we're about to ship.
             let signer = Signer::new(&self.config)?;
@@ -454,6 +469,28 @@ upload-addr = \"{}/{}\"
         for file in self.build_dir().join("build/dist/").read_dir()? {
             let file = file?;
             fs::copy(file.path(), self.dl_dir().join(file.file_name()))?;
+        }
+
+        Ok(())
+    }
+
+    fn prune_unused_files(&self, shipped_files: &HashSet<PathBuf>) -> Result<(), Error> {
+        let release = self.config.channel.release_name(self);
+        let allowed_files = AVOID_PRUNING_UNUSED_FILES
+            .iter()
+            .map(|pattern| pattern.replace("{release}", &release).into())
+            .collect::<HashSet<PathBuf>>();
+
+        for entry in std::fs::read_dir(self.dl_dir())? {
+            let entry = entry?;
+
+            if let Some(name) = entry.path().file_name() {
+                let name = Path::new(name);
+                if !allowed_files.contains(name) && !shipped_files.contains(name) {
+                    std::fs::remove_file(entry.path())?;
+                    println!("pruned unused file {}", name.display());
+                }
+            }
         }
 
         Ok(())

@@ -1,13 +1,14 @@
-use crate::{config::Channel, Context};
+use crate::Context;
 use anyhow::{Context as _, Error};
 use std::{
+    collections::HashSet,
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
     process::Command,
 };
 use tar::Archive;
-use tempfile::NamedTempFile;
+use tempfile::{NamedTempFile, TempDir};
 use xz2::read::XzDecoder;
 
 pub(crate) struct BuildManifest<'a> {
@@ -19,10 +20,7 @@ pub(crate) struct BuildManifest<'a> {
 impl<'a> BuildManifest<'a> {
     pub(crate) fn new(builder: &'a Context) -> Self {
         // Precalculate paths used later.
-        let release = match builder.config.channel {
-            Channel::Stable => builder.current_version.clone().unwrap(),
-            channel => channel.to_string(),
-        };
+        let release = builder.config.channel.release_name(builder);
         let tarball_name = format!("build-manifest-{}-{}", release, crate::TARGET);
         let tarball_path = builder.dl_dir().join(format!("{}.tar.xz", tarball_name));
 
@@ -37,11 +35,14 @@ impl<'a> BuildManifest<'a> {
         self.tarball_path.is_file()
     }
 
-    pub(crate) fn run(&self) -> Result<(), Error> {
+    pub(crate) fn run(&self) -> Result<Execution, Error> {
         let config = &self.builder.config;
         let bin = self
             .extract()
             .context("failed to extract build-manifest from the tarball")?;
+
+        let metadata_dir = TempDir::new()?;
+        let shipped_files_path = metadata_dir.path().join("shipped-files.txt");
 
         println!("running build-manifest...");
         let upload_addr = format!("{}/{}", config.upload_addr, config.upload_dir);
@@ -52,11 +53,12 @@ impl<'a> BuildManifest<'a> {
             .arg(&self.builder.date)
             .arg(upload_addr)
             .arg(config.channel.to_string())
+            .env("BUILD_MANIFEST_SHIPPED_FILES_PATH", &shipped_files_path)
             .status()
             .context("failed to execute build-manifest")?;
 
         if status.success() {
-            Ok(())
+            Execution::new(&shipped_files_path)
         } else {
             anyhow::bail!("build-manifest failed with status {:?}", status);
         }
@@ -80,5 +82,29 @@ impl<'a> BuildManifest<'a> {
             .unpack(bin.path())?;
 
         Ok(bin)
+    }
+}
+
+pub(crate) struct Execution {
+    pub(crate) shipped_files: Option<HashSet<PathBuf>>,
+}
+
+impl Execution {
+    fn new(shipped_files_path: &Path) -> Result<Self, Error> {
+        // Once https://github.com/rust-lang/rust/pull/78196 reaches stable we can assume the
+        // "shipped files" file is always generated, and we can remove the Option<_>.
+        let shipped_files = if shipped_files_path.is_file() {
+            Some(
+                std::fs::read_to_string(shipped_files_path)?
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .map(PathBuf::from)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        Ok(Execution { shipped_files })
     }
 }

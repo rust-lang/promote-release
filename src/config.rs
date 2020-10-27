@@ -1,4 +1,5 @@
-use anyhow::{Context, Error};
+use crate::Context;
+use anyhow::{Context as _, Error};
 use std::env::VarError;
 use std::str::FromStr;
 
@@ -9,6 +10,16 @@ pub(crate) enum Channel {
     Stable,
     Beta,
     Nightly,
+}
+
+impl Channel {
+    pub(crate) fn release_name(&self, ctx: &Context) -> String {
+        if *self == Channel::Stable {
+            ctx.current_version.clone().unwrap()
+        } else {
+            self.to_string()
+        }
+    }
 }
 
 impl FromStr for Channel {
@@ -70,6 +81,9 @@ pub(crate) struct Config {
     /// Whether to allow multiple releases on the same channel in the same day or not.
     pub(crate) allow_multiple_today: bool,
 
+    /// Whether to allow the work-in-progress pruning code for this release.
+    pub(crate) wip_prune_unused_files: bool,
+
     /// The compression level to use when recompressing tarballs with gzip.
     pub(crate) gzip_compression_level: u32,
     /// Custom sha of the commit to release, instead of the latest commit in the channel's branch.
@@ -105,6 +119,7 @@ impl Config {
             upload_addr: require_env("UPLOAD_ADDR")?,
             upload_bucket: require_env("UPLOAD_BUCKET")?,
             upload_dir: require_env("UPLOAD_DIR")?,
+            wip_prune_unused_files: bool_env("WIP_PRUNE_UNUSED_FILES")?,
         })
     }
 }
