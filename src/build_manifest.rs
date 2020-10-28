@@ -45,12 +45,19 @@ impl<'a> BuildManifest<'a> {
         let checksum_cache = metadata_dir.path().join("checksum-cache.json");
         let shipped_files_path = metadata_dir.path().join("shipped-files.txt");
 
+        // Ensure the manifest dir exists but is empty.
+        let manifest_dir = self.builder.manifest_dir();
+        if manifest_dir.is_dir() {
+            std::fs::remove_dir_all(&manifest_dir)?;
+        }
+        std::fs::create_dir_all(&manifest_dir)?;
+
         println!("running build-manifest...");
         let upload_addr = format!("{}/{}", config.upload_addr, config.upload_dir);
         // build-manifest <input-dir> <output-dir> <date> <upload-addr> <channel>
         let status = Command::new(bin.path())
             .arg(self.builder.dl_dir())
-            .arg(self.builder.dl_dir())
+            .arg(self.builder.manifest_dir())
             .arg(&self.builder.date)
             .arg(upload_addr)
             .arg(config.channel.to_string())
