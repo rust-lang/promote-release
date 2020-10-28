@@ -10,6 +10,7 @@ use pgp::{
 use rayon::prelude::*;
 use sha2::Digest;
 use std::{
+    collections::HashMap,
     fs::File,
     path::{Path, PathBuf},
     time::Instant,
@@ -20,6 +21,7 @@ use crate::config::Config;
 pub(crate) struct Signer {
     gpg_key: SignedSecretKey,
     gpg_password: String,
+    sha256_checksum_cache: HashMap<PathBuf, String>,
 }
 
 impl Signer {
@@ -29,7 +31,12 @@ impl Signer {
         Ok(Signer {
             gpg_key: SignedSecretKey::from_armor_single(&mut key_file)?.0,
             gpg_password,
+            sha256_checksum_cache: HashMap::new(),
         })
+    }
+
+    pub(crate) fn override_checksum_cache(&mut self, new: HashMap<PathBuf, String>) {
+        self.sha256_checksum_cache = new;
     }
 
     pub(crate) fn sign_directory(&self, path: &Path) -> Result<(), Error> {
@@ -85,9 +92,15 @@ impl Signer {
     }
 
     fn generate_sha256(&self, path: &Path, data: &[u8]) -> Result<(), Error> {
-        let mut digest = sha2::Sha256::default();
-        digest.update(data);
-        let sha256 = hex::encode(digest.finalize());
+        let canonical_path = std::fs::canonicalize(path)?;
+
+        let sha256 = if let Some(cached) = self.sha256_checksum_cache.get(&canonical_path) {
+            cached.clone()
+        } else {
+            let mut digest = sha2::Sha256::default();
+            digest.update(data);
+            hex::encode(digest.finalize())
+        };
 
         std::fs::write(
             add_suffix(path, ".sha256"),

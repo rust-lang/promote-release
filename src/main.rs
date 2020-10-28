@@ -182,10 +182,13 @@ impl Context {
 
         // Ok we've now determined that a release needs to be done.
 
+        let mut signer = Signer::new(&self.config)?;
         let build_manifest = BuildManifest::new(self);
+
         if build_manifest.exists() {
             // Generate the channel manifest
             let execution = build_manifest.run()?;
+            signer.override_checksum_cache(execution.checksum_cache);
 
             if self.config.wip_prune_unused_files {
                 // Removes files that we are not shipping from the files we're about to upload.
