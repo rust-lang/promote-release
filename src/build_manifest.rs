@@ -35,7 +35,7 @@ impl<'a> BuildManifest<'a> {
         self.tarball_path.is_file()
     }
 
-    pub(crate) fn run(&self) -> Result<Execution, Error> {
+    pub(crate) fn run(&self, upload_base: &str) -> Result<Execution, Error> {
         let config = &self.builder.config;
         let bin = self
             .extract()
@@ -53,13 +53,12 @@ impl<'a> BuildManifest<'a> {
         std::fs::create_dir_all(&manifest_dir)?;
 
         println!("running build-manifest...");
-        let upload_addr = format!("{}/{}", config.upload_addr, config.upload_dir);
         // build-manifest <input-dir> <output-dir> <date> <upload-addr> <channel>
         let status = Command::new(bin.path())
             .arg(self.builder.dl_dir())
             .arg(self.builder.manifest_dir())
             .arg(&self.builder.date)
-            .arg(upload_addr)
+            .arg(upload_base)
             .arg(config.channel.to_string())
             .env("BUILD_MANIFEST_CHECKSUM_CACHE", &checksum_cache)
             .env("BUILD_MANIFEST_SHIPPED_FILES_PATH", &shipped_files_path)
