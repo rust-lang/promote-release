@@ -22,14 +22,6 @@ use crate::config::{Channel, Config};
 
 const TARGET: &str = env!("TARGET");
 
-/// List of files that should not be pruned even if they're not referenced in the manifest.
-const AVOID_PRUNING_UNUSED_FILES: &[&str] = &[
-    // Source code tarballs, which are not distributed through rustup and thus are mistakenly
-    // marked as "unused" by build-manifest.
-    "rustc-{release}-src.tar.gz",
-    "rustc-{release}-src.tar.xz",
-];
-
 struct Context {
     work: PathBuf,
     handle: Easy,
@@ -475,18 +467,11 @@ upload-addr = \"{}/{}\"
     }
 
     fn prune_unused_files(&self, shipped_files: &HashSet<PathBuf>) -> Result<(), Error> {
-        let release = self.config.channel.release_name(self);
-        let allowed_files = AVOID_PRUNING_UNUSED_FILES
-            .iter()
-            .map(|pattern| pattern.replace("{release}", &release).into())
-            .collect::<HashSet<PathBuf>>();
-
         for entry in std::fs::read_dir(self.dl_dir())? {
             let entry = entry?;
-
             if let Some(name) = entry.path().file_name() {
                 let name = Path::new(name);
-                if !allowed_files.contains(name) && !shipped_files.contains(name) {
+                if !shipped_files.contains(name) {
                     std::fs::remove_file(entry.path())?;
                     println!("pruned unused file {}", name.display());
                 }
