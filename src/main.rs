@@ -139,20 +139,21 @@ impl Context {
 
         // If the previously released version is the same rev, then there's
         // nothing for us to do, nothing has changed.
-        if previous_version.contains(&rev[..7]) {
+        if !self.config.bypass_startup_checks && previous_version.contains(&rev[..7]) {
             println!("found rev in previous version, skipping");
+            println!("set PROMOTE_RELEASE_BYPASS_STARTUP_CHECKS=1 to bypass the check");
             return Ok(());
         }
 
         // During normal operations we don't want multiple releases to happen on the same channel
         // in the same day. This check prevents that, and it can be skipped by setting an
         // environment variable if the person doing the release really wants that.
-        if !self.config.allow_multiple_today && self.dated_manifest_exists()? {
+        if !self.config.bypass_startup_checks && self.dated_manifest_exists()? {
             println!(
-                "another release on the {} channel was done today ({})",
+                "another release on the {} channel was done today ({}), skipping",
                 self.config.channel, self.date
             );
-            println!("set PROMOTE_RELEASE_ALLOW_MULTIPLE_TODAY=1 to bypass the check");
+            println!("set PROMOTE_RELEASE_BYPASS_STARTUP_CHECKS=1 to bypass the check");
             return Ok(());
         }
 
@@ -165,8 +166,12 @@ impl Context {
         // to do. This represents a scenario where changes have been merged to
         // the stable/beta branch but the version bump hasn't happened yet.
         self.download_artifacts(&rev)?;
-        if self.current_version_same(&previous_version)? {
+        // The bypass_startup_checks condition is after the function call since we need that
+        // function to run even if we wan to discard its output (it fetches and stores the current
+        // version we're about to release).
+        if self.current_version_same(&previous_version)? && !self.config.bypass_startup_checks {
             println!("version hasn't changed, skipping");
+            println!("set PROMOTE_RELEASE_BYPASS_STARTUP_CHECKS=1 to bypass the check");
             return Ok(());
         }
 

@@ -77,9 +77,13 @@ pub(crate) struct Config {
     pub(crate) upload_bucket: String,
     /// The S3 directory that release artifacts will be uploaded to.
     pub(crate) upload_dir: String,
-
-    /// Whether to allow multiple releases on the same channel in the same day or not.
-    pub(crate) allow_multiple_today: bool,
+    /// Whether to run the checks at startup that prevent a potentially unwanted release from
+    /// happening. If this is set to `true`, the following checks will be disabled:
+    ///
+    /// * Preventing multiple releases on the channel the same day.
+    /// * Preventing multiple releases on the channel of the same git commit.
+    /// * Preventing multiple releases on stable and beta of the same version number.
+    pub(crate) bypass_startup_checks: bool,
 
     /// Whether to allow the work-in-progress pruning code for this release.
     pub(crate) wip_prune_unused_files: bool,
@@ -102,7 +106,7 @@ pub(crate) struct Config {
 impl Config {
     pub(crate) fn from_env() -> Result<Self, Error> {
         Ok(Self {
-            allow_multiple_today: bool_env("ALLOW_MULTIPLE_TODAY")?,
+            bypass_startup_checks: bool_env("BYPASS_STARTUP_CHECKS")?,
             channel: require_env("CHANNEL")?,
             cloudfront_doc_id: require_env("CLOUDFRONT_DOC_ID")?,
             cloudfront_static_id: require_env("CLOUDFRONT_STATIC_ID")?,
