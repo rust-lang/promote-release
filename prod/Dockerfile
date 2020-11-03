@@ -56,6 +56,13 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ninja-build \
     python-is-python3
 
+# Install rustup while removing the pre-installed stable toolchain.
+RUN curl https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init >/tmp/rustup-init && \
+    chmod +x /tmp/rustup-init && \
+    /tmp/rustup-init -y --no-modify-path --default-toolchain stable && \
+    /root/.cargo/bin/rustup toolchain remove stable
+ENV PATH=/root/.cargo/bin:$PATH
+
 COPY --from=build /tmp/source/target/release/promote-release /usr/local/bin/
 COPY prod/load-gpg-keys.sh /usr/local/bin/load-gpg-keys
 

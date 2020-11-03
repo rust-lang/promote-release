@@ -1,6 +1,7 @@
 mod build_manifest;
 mod config;
 mod sign;
+mod smoke_test;
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
@@ -9,13 +10,14 @@ use std::process::Command;
 use std::time::Instant;
 use std::{collections::HashSet, env};
 
+use crate::build_manifest::BuildManifest;
+use crate::sign::Signer;
+use crate::smoke_test::SmokeTester;
 use anyhow::Error;
-use build_manifest::BuildManifest;
 use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
 use rayon::prelude::*;
-use sign::Signer;
 use xz2::read::XzDecoder;
 
 use crate::config::{Channel, Config};
@@ -179,10 +181,18 @@ impl Context {
 
         // Ok we've now determined that a release needs to be done.
 
+        let mut signer = Signer::new(&self.config)?;
         let build_manifest = BuildManifest::new(self);
+
         if build_manifest.exists() {
-            // Generate the channel manifest
-            let execution = build_manifest.run()?;
+            let smoke_test = SmokeTester::new(&[self.manifest_dir(), self.dl_dir()])?;
+
+            // First of all, a manifest is generated pointing to the smoke test server. This will
+            // produce the correct checksums and shipped files list, as the only difference from
+            // between the "real" execution and this one is the URLs included in the manifest.
+            let execution =
+                build_manifest.run(&format!("http://{}/dist", smoke_test.server_addr()))?;
+            signer.override_checksum_cache(execution.checksum_cache);
 
             if self.config.wip_prune_unused_files {
                 // Removes files that we are not shipping from the files we're about to upload.
@@ -191,9 +201,29 @@ impl Context {
                 }
             }
 
-            // Generate checksums and sign all the files we're about to ship.
-            let signer = Signer::new(&self.config)?;
+            // Sign both the downloaded artifacts and the generated manifests. The signatures of
+            // the downloaded files are permanent, while the signatures for the generated manifests
+            // will be discarded later (as the manifests point to the smoke test server).
             signer.sign_directory(&self.dl_dir())?;
+            signer.sign_directory(&self.manifest_dir())?;
+
+            // Ensure the release is downloadable from rustup and can execute a basic binary.
+            smoke_test.test(&self.config.channel)?;
+
+            // Generate the real manifests and sign them.
+            build_manifest.run(&format!(
+                "{}/{}",
+                self.config.upload_addr, self.config.upload_dir
+            ))?;
+            signer.sign_directory(&self.manifest_dir())?;
+
+            // Merge the generated manifests with the downloaded artifacts.
+            for entry in std::fs::read_dir(&self.manifest_dir())? {
+                let entry = entry?;
+                if entry.file_type()?.is_file() {
+                    std::fs::rename(entry.path(), self.dl_dir().join(entry.file_name()))?;
+                }
+            }
         } else {
             // For releases using the legacy build-manifest, we need to clone the rustc monorepo
             // and invoke `./x.py dist hash-and-sign` in it. This won't be needed after 1.48.0 is
@@ -665,6 +695,10 @@ upload-addr = \"{}/{}\"
 
     fn dl_dir(&self) -> PathBuf {
         self.work.join("dl")
+    }
+
+    fn manifest_dir(&self) -> PathBuf {
+        self.work.join("manifests")
     }
 
     fn build_dir(&self) -> PathBuf {
