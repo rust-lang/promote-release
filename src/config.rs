@@ -89,6 +89,8 @@ pub(crate) struct Config {
 
     /// Whether to allow the work-in-progress pruning code for this release.
     pub(crate) wip_prune_unused_files: bool,
+    /// Whether to force the recompression of .gz files into .xz.
+    pub(crate) wip_recompress: bool,
 
     /// The compression level to use when recompressing tarballs with gzip.
     pub(crate) gzip_compression_level: u32,
@@ -127,6 +129,7 @@ impl Config {
             upload_bucket: require_env("UPLOAD_BUCKET")?,
             upload_dir: require_env("UPLOAD_DIR")?,
             wip_prune_unused_files: bool_env("WIP_PRUNE_UNUSED_FILES")?,
+            wip_recompress: bool_env("WIP_RECOMPRESS")?,
         })
     }
 }
