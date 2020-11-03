@@ -47,6 +47,11 @@ impl Context {
     fn new(work: PathBuf, config: Config) -> Result<Self, Error> {
         let date = Utc::now().format("%Y-%m-%d").to_string();
 
+        // Configure the right amount of Rayon threads.
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(config.num_threads)
+            .build_global()?;
+
         Ok(Context {
             work,
             config,
