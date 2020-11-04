@@ -60,6 +60,8 @@ pub(crate) struct Config {
     pub(crate) gpg_key_file: String,
     /// Path of the file containing the password of the GPG secret key.
     pub(crate) gpg_password_file: String,
+    // Number of concurrent threads to start during the parallel segments of promote-release.
+    pub(crate) num_threads: usize,
     /// URL of the git repository containing the Rust source code.
     pub(crate) repository: String,
     /// Remote HTTP host artifacts will be uploaded to. Note that this is *not* the same as what's
@@ -87,6 +89,8 @@ pub(crate) struct Config {
 
     /// Whether to allow the work-in-progress pruning code for this release.
     pub(crate) wip_prune_unused_files: bool,
+    /// Whether to force the recompression of .gz files into .xz.
+    pub(crate) wip_recompress: bool,
 
     /// The compression level to use when recompressing tarballs with gzip.
     pub(crate) gzip_compression_level: u32,
@@ -115,6 +119,7 @@ impl Config {
             gpg_key_file: require_env("GPG_KEY_FILE")?,
             gpg_password_file: require_env("GPG_PASSWORD_FILE")?,
             gzip_compression_level: default_env("GZIP_COMPRESSION_LEVEL", 9)?,
+            num_threads: default_env("NUM_THREADS", num_cpus::get())?,
             override_commit: maybe_env("OVERRIDE_COMMIT")?,
             repository: default_env("REPOSITORY", "https://github.com/rust-lang/rust.git".into())?,
             s3_endpoint_url: maybe_env("S3_ENDPOINT_URL")?,
@@ -124,6 +129,7 @@ impl Config {
             upload_bucket: require_env("UPLOAD_BUCKET")?,
             upload_dir: require_env("UPLOAD_DIR")?,
             wip_prune_unused_files: bool_env("WIP_PRUNE_UNUSED_FILES")?,
+            wip_recompress: bool_env("WIP_RECOMPRESS")?,
         })
     }
 }

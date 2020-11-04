@@ -54,6 +54,7 @@ impl<'a> BuildManifest<'a> {
 
         println!("running build-manifest...");
         // build-manifest <input-dir> <output-dir> <date> <upload-addr> <channel>
+        let num_threads = self.builder.config.num_threads.to_string();
         let status = Command::new(bin.path())
             .arg(self.builder.dl_dir())
             .arg(self.builder.manifest_dir())
@@ -61,6 +62,7 @@ impl<'a> BuildManifest<'a> {
             .arg(upload_base)
             .arg(config.channel.to_string())
             .env("BUILD_MANIFEST_CHECKSUM_CACHE", &checksum_cache)
+            .env("BUILD_MANIFEST_NUM_THREADS", num_threads)
             .env("BUILD_MANIFEST_SHIPPED_FILES_PATH", &shipped_files_path)
             .status()
             .context("failed to execute build-manifest")?;

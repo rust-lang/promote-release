@@ -47,6 +47,11 @@ impl Context {
     fn new(work: PathBuf, config: Config) -> Result<Self, Error> {
         let date = Utc::now().format("%Y-%m-%d").to_string();
 
+        // Configure the right amount of Rayon threads.
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(config.num_threads)
+            .build_global()?;
+
         Ok(Context {
             work,
             config,
@@ -436,9 +441,12 @@ upload-addr = \"{}/{}\"
                 // Generate *.gz from *.xz...
                 Some("xz") => {
                     let gz_path = path.with_extension("gz");
-                    if !gz_path.is_file() {
+                    if self.config.wip_recompress || !gz_path.is_file() {
                         to_recompress.push((path.to_path_buf(), gz_path));
                     }
+                }
+                Some("gz") if self.config.wip_recompress => {
+                    fs::remove_file(&path)?;
                 }
                 _ => {}
             }
