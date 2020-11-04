@@ -74,7 +74,13 @@ impl SmokeTester {
         };
 
         rustup(&["toolchain", "remove", &channel.to_string()])?;
-        rustup(&["toolchain", "install", &channel.to_string()])?;
+        rustup(&[
+            "toolchain",
+            "install",
+            &channel.to_string(),
+            "--profile",
+            "minimal",
+        ])?;
         cargo(&["init", "--bin", "."])?;
         cargo(&["run"])?;
 

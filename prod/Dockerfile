@@ -59,7 +59,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
 # Install rustup while removing the pre-installed stable toolchain.
 RUN curl https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init >/tmp/rustup-init && \
     chmod +x /tmp/rustup-init && \
-    /tmp/rustup-init -y --no-modify-path --default-toolchain stable && \
+    /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain stable && \
     /root/.cargo/bin/rustup toolchain remove stable
 ENV PATH=/root/.cargo/bin:$PATH
 
