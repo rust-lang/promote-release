@@ -199,11 +199,9 @@ impl Context {
                 build_manifest.run(&format!("http://{}/dist", smoke_test.server_addr()))?;
             signer.override_checksum_cache(execution.checksum_cache);
 
-            if self.config.wip_prune_unused_files {
-                // Removes files that we are not shipping from the files we're about to upload.
-                if let Some(shipped_files) = &execution.shipped_files {
-                    self.prune_unused_files(&shipped_files)?;
-                }
+            // Removes files that we are not shipping from the files we're about to upload.
+            if let Some(shipped_files) = &execution.shipped_files {
+                self.prune_unused_files(&shipped_files)?;
             }
 
             // Sign both the downloaded artifacts and the generated manifests. The signatures of

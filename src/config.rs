@@ -87,8 +87,6 @@ pub(crate) struct Config {
     /// * Preventing multiple releases on stable and beta of the same version number.
     pub(crate) bypass_startup_checks: bool,
 
-    /// Whether to allow the work-in-progress pruning code for this release.
-    pub(crate) wip_prune_unused_files: bool,
     /// Whether to force the recompression of .gz files into .xz.
     pub(crate) wip_recompress: bool,
 
@@ -128,7 +126,6 @@ impl Config {
             upload_addr: require_env("UPLOAD_ADDR")?,
             upload_bucket: require_env("UPLOAD_BUCKET")?,
             upload_dir: require_env("UPLOAD_DIR")?,
-            wip_prune_unused_files: bool_env("WIP_PRUNE_UNUSED_FILES")?,
             wip_recompress: bool_env("WIP_RECOMPRESS")?,
         })
     }
