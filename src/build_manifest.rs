@@ -13,37 +13,32 @@ use xz2::read::XzDecoder;
 
 pub(crate) struct BuildManifest<'a> {
     builder: &'a Context,
-    tarball_name: String,
-    tarball_path: PathBuf,
+    executable: NamedTempFile,
+
+    _metadata_dir: TempDir,
+    checksum_cache_path: PathBuf,
+    shipped_files_path: PathBuf,
 }
 
 impl<'a> BuildManifest<'a> {
-    pub(crate) fn new(builder: &'a Context) -> Self {
-        // Precalculate paths used later.
-        let release = builder.config.channel.release_name(builder);
-        let tarball_name = format!("build-manifest-{}-{}", release, crate::TARGET);
-        let tarball_path = builder.dl_dir().join(format!("{}.tar.xz", tarball_name));
+    pub(crate) fn new(builder: &'a Context) -> Result<Self, Error> {
+        let metadata_dir = TempDir::new()?;
+        let checksum_cache_path = metadata_dir.path().join("checksum-cache.json");
+        let shipped_files_path = metadata_dir.path().join("shipped-files.txt");
 
-        Self {
+        Ok(Self {
             builder,
-            tarball_name,
-            tarball_path,
-        }
-    }
+            executable: Self::extract(builder)
+                .context("failed to extract build-manifest from the tarball")?,
 
-    pub(crate) fn exists(&self) -> bool {
-        self.tarball_path.is_file()
+            _metadata_dir: metadata_dir,
+            checksum_cache_path,
+            shipped_files_path,
+        })
     }
 
     pub(crate) fn run(&self, upload_base: &str) -> Result<Execution, Error> {
         let config = &self.builder.config;
-        let bin = self
-            .extract()
-            .context("failed to extract build-manifest from the tarball")?;
-
-        let metadata_dir = TempDir::new()?;
-        let checksum_cache = metadata_dir.path().join("checksum-cache.json");
-        let shipped_files_path = metadata_dir.path().join("shipped-files.txt");
 
         // Ensure the manifest dir exists but is empty.
         let manifest_dir = self.builder.manifest_dir();
@@ -52,35 +47,57 @@ impl<'a> BuildManifest<'a> {
         }
         std::fs::create_dir_all(&manifest_dir)?;
 
+        // Ensure the shipped files path does not exists
+        if self.shipped_files_path.is_file() {
+            std::fs::remove_file(&self.shipped_files_path)?;
+        }
+
         println!("running build-manifest...");
         // build-manifest <input-dir> <output-dir> <date> <upload-addr> <channel>
         let num_threads = self.builder.config.num_threads.to_string();
-        let status = Command::new(bin.path())
+        let status = Command::new(self.executable.path())
             .arg(self.builder.dl_dir())
             .arg(self.builder.manifest_dir())
             .arg(&self.builder.date)
             .arg(upload_base)
             .arg(config.channel.to_string())
-            .env("BUILD_MANIFEST_CHECKSUM_CACHE", &checksum_cache)
+            .env("BUILD_MANIFEST_CHECKSUM_CACHE", &self.checksum_cache_path)
             .env("BUILD_MANIFEST_NUM_THREADS", num_threads)
-            .env("BUILD_MANIFEST_SHIPPED_FILES_PATH", &shipped_files_path)
+            .env(
+                "BUILD_MANIFEST_SHIPPED_FILES_PATH",
+                &self.shipped_files_path,
+            )
             .status()
             .context("failed to execute build-manifest")?;
 
         if status.success() {
-            Execution::new(&shipped_files_path, &checksum_cache)
+            Execution::new(&self.shipped_files_path, &self.checksum_cache_path)
         } else {
             anyhow::bail!("build-manifest failed with status {:?}", status);
         }
     }
 
-    fn extract(&self) -> Result<NamedTempFile, Error> {
-        let binary_path = Path::new(&self.tarball_name)
+    pub(crate) fn exists(builder: &'a Context) -> bool {
+        // Yes, this code is duplicated, but it's going to be removed in two weeks (once 1.48.0 is
+        // released on the stable channel). If you see this code in the future just remove the
+        // whole function :) -pietro
+        let release = builder.config.channel.release_name(builder);
+        let tarball_name = format!("build-manifest-{}-{}", release, crate::TARGET);
+        let tarball_path = builder.dl_dir().join(format!("{}.tar.xz", tarball_name));
+        tarball_path.is_file()
+    }
+
+    fn extract(builder: &'a Context) -> Result<NamedTempFile, Error> {
+        let release = builder.config.channel.release_name(builder);
+        let tarball_name = format!("build-manifest-{}-{}", release, crate::TARGET);
+        let tarball_path = builder.dl_dir().join(format!("{}.tar.xz", tarball_name));
+
+        let binary_path = Path::new(&tarball_name)
             .join("build-manifest")
             .join("bin")
             .join("build-manifest");
 
-        let tarball_file = BufReader::new(File::open(&self.tarball_path)?);
+        let tarball_file = BufReader::new(File::open(tarball_path)?);
         let mut tarball = Archive::new(XzDecoder::new(tarball_file));
 
         let bin = NamedTempFile::new()?;
