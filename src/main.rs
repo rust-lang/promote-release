@@ -186,10 +186,9 @@ impl Context {
 
         // Ok we've now determined that a release needs to be done.
 
-        let mut signer = Signer::new(&self.config)?;
-        let build_manifest = BuildManifest::new(self);
-
-        if build_manifest.exists() {
+        if BuildManifest::exists(self) {
+            let mut signer = Signer::new(&self.config)?;
+            let build_manifest = BuildManifest::new(self)?;
             let smoke_test = SmokeTester::new(&[self.manifest_dir(), self.dl_dir()])?;
 
             // First of all, a manifest is generated pointing to the smoke test server. This will
