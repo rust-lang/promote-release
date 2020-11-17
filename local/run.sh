@@ -63,30 +63,11 @@ if [[ "${channel}" = "stable" ]]; then
     raw_url="https://raw.githubusercontent.com/rust-lang/rust/${commit}"
 
     echo "==> loading rust version from src/version"
-    rust_release="$(curl --fail "${raw_url}/src/version" 2>/dev/null || true)"
+    release="$(curl --fail "${raw_url}/src/version" 2>/dev/null || true)"
 
-    # Legacy location of the Rust version. Outdated since 1.48.0.
-    if [[ "${rust_release}" = "" ]]; then
-        echo "==> loading rust version from src/bootstrap/channel.rs"
-        raw_release=$(curl --fail "${raw_url}/src/bootstrap/channel.rs" 2>&1 || true)
-        rust_release="$(echo "${raw_release}" | grep "CFG_RELEASE_NUM:" | sed -r 's/pub const CFG_RELEASE_NUM: &str = "([^"]+)";/\1/')"
-
-        if [[ "${rust_release}" = "" ]]; then
-            echo "ERR failed to get the version number"
-            exit 1
-        fi
-    fi
-
-    # Do our best to guess the cargo version
-    # This is kinda of a mess, yeah, and it will surely break. Sorry to whoever
-    # will have to fix this.
-    cargo_release="$(echo "${rust_release}" | awk '{split($0,a,".");a[2]+=1; print "0." a[2] "." a[3]}')"
-
-    echo "found rust version ${rust_release}"
-    echo "guessed cargo version ${cargo_release}"
+    echo "found rust version ${release}"
 else
-    rust_release="${channel}"
-    cargo_release="${channel}"
+    release="${channel}"
 fi
 
 download() {
@@ -103,11 +84,6 @@ download() {
 
 for target in "${DOWNLOAD_COMPONENT_TARGETS[@]}"; do
     for component in "${DOWNLOAD_COMPONENTS[@]}"; do
-        release="${rust_release}"
-        if [[ "${component}" = "cargo" ]]; then
-            release="${cargo_release}"
-        fi
-
         download "${component}-${release}-${target}.tar.xz"
     done
 done
