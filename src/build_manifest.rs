@@ -37,15 +37,14 @@ impl<'a> BuildManifest<'a> {
         })
     }
 
-    pub(crate) fn run(&self, upload_base: &str) -> Result<Execution, Error> {
+    pub(crate) fn run(&self, upload_base: &str, dest: &Path) -> Result<Execution, Error> {
         let config = &self.builder.config;
 
         // Ensure the manifest dir exists but is empty.
-        let manifest_dir = self.builder.manifest_dir();
-        if manifest_dir.is_dir() {
-            std::fs::remove_dir_all(&manifest_dir)?;
+        if dest.is_dir() {
+            std::fs::remove_dir_all(&dest)?;
         }
-        std::fs::create_dir_all(&manifest_dir)?;
+        std::fs::create_dir_all(&dest)?;
 
         // Ensure the shipped files path does not exists
         if self.shipped_files_path.is_file() {
@@ -57,7 +56,7 @@ impl<'a> BuildManifest<'a> {
         let num_threads = self.builder.config.num_threads.to_string();
         let status = Command::new(self.executable.path())
             .arg(self.builder.dl_dir())
-            .arg(self.builder.manifest_dir())
+            .arg(dest)
             .arg(&self.builder.date)
             .arg(upload_base)
             .arg(config.channel.to_string())
