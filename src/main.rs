@@ -1,3 +1,5 @@
+#![allow(clippy::rc_buffer)]
+
 mod build_manifest;
 mod config;
 mod sign;
