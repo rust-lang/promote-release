@@ -11,20 +11,13 @@ FROM ubuntu:focal
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     awscli \
+    build-essential \
     curl \
     git \
     gnupg \
     jq \
     python3 \
     socat
-
-# Dependencies needed to run ./x.py hash-and-dist
-# These should not be needed anymore once we stop calling it through ./x.py
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    build-essential \
-    cmake \
-    ninja-build \
-    python-is-python3
 
 # Install rustup while removing the pre-installed stable toolchain.
 RUN curl https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init >/tmp/rustup-init && \
