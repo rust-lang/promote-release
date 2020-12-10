@@ -100,9 +100,6 @@ pub(crate) struct Config {
     /// Whether to skip invalidating the CloudFront distributions. This is useful when running the
     /// release process locally, without access to the production AWS account.
     pub(crate) skip_cloudfront_invalidations: bool,
-    /// Whether to avoid deleting the Rust build dir or not. Deleting it will improve the execution
-    /// time, but it will use more disk space.
-    pub(crate) skip_delete_build_dir: bool,
 }
 
 impl Config {
@@ -122,7 +119,6 @@ impl Config {
             repository: default_env("REPOSITORY", "https://github.com/rust-lang/rust.git".into())?,
             s3_endpoint_url: maybe_env("S3_ENDPOINT_URL")?,
             skip_cloudfront_invalidations: bool_env("SKIP_CLOUDFRONT_INVALIDATIONS")?,
-            skip_delete_build_dir: bool_env("SKIP_DELETE_BUILD_DIR")?,
             upload_addr: require_env("UPLOAD_ADDR")?,
             upload_bucket: require_env("UPLOAD_BUCKET")?,
             upload_dir: require_env("UPLOAD_DIR")?,

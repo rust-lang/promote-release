@@ -76,16 +76,6 @@ impl<'a> BuildManifest<'a> {
         }
     }
 
-    pub(crate) fn exists(builder: &'a Context) -> bool {
-        // Yes, this code is duplicated, but it's going to be removed in two weeks (once 1.48.0 is
-        // released on the stable channel). If you see this code in the future just remove the
-        // whole function :) -pietro
-        let release = builder.config.channel.release_name(builder);
-        let tarball_name = format!("build-manifest-{}-{}", release, crate::TARGET);
-        let tarball_path = builder.dl_dir().join(format!("{}.tar.xz", tarball_name));
-        tarball_path.is_file()
-    }
-
     fn extract(builder: &'a Context) -> Result<NamedTempFile, Error> {
         let release = builder.config.channel.release_name(builder);
         let tarball_name = format!("build-manifest-{}-{}", release, crate::TARGET);

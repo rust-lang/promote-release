@@ -112,7 +112,6 @@ export PROMOTE_RELEASE_BYPASS_STARTUP_CHECKS="1"
 export PROMOTE_RELEASE_GZIP_COMPRESSION_LEVEL="1" # Faster recompressions
 export PROMOTE_RELEASE_S3_ENDPOINT_URL="http://minio:9000"
 export PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS="yes"
-export PROMOTE_RELEASE_SKIP_DELETE_BUILD_DIR="yes"
 # Conditional environment variables
 if [[ "${override_commit}" != "" ]]; then
     export PROMOTE_RELEASE_OVERRIDE_COMMIT="${override_commit}"
