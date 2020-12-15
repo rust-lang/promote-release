@@ -102,9 +102,15 @@ impl Signer {
             hex::encode(digest.finalize())
         };
 
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("missing file name from path"))?
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("the file name is not UTF-8"))?;
+
         std::fs::write(
             add_suffix(path, ".sha256"),
-            format!("{}\n", sha256).as_bytes(),
+            format!("{}  {}\n", sha256, file_name),
         )?;
 
         Ok(())

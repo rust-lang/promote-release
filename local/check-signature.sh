@@ -17,6 +17,8 @@ cd "${dir}"
 # Use MinIO's CLI to download the files from storage
 mc cp "local/static/dist/channel-rust-${channel}.toml" . >/dev/null
 mc cp "local/static/dist/channel-rust-${channel}.toml.asc" . >/dev/null
+mc cp "local/static/dist/channel-rust-${channel}.toml.sha256" . >/dev/null
 
 export GNUPGHOME="/persistent/gpg-home"
 gpg --armor --pinentry-mode loopback --verify "channel-rust-${channel}.toml.asc" "channel-rust-${channel}.toml"
+sha256sum -c "channel-rust-${channel}.toml.sha256"
