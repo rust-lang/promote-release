@@ -139,6 +139,7 @@ impl Signer {
 }
 
 fn should_exclude_path(path: &Path) -> bool {
+    #[allow(clippy::match_like_matches_macro)]
     match path.extension().and_then(|ext| ext.to_str()) {
         Some("asc") => true,    // GPG signatures
         Some("sha256") => true, // SHA256 checksums

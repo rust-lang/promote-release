@@ -107,7 +107,7 @@ impl Context {
                 .repository_authentication
                 .as_ref()
                 .map(|c| c.as_git2_credentials())
-                .unwrap_or_else(|| git2::Cred::default())
+                .unwrap_or_else(git2::Cred::default)
         });
 
         println!(
@@ -169,7 +169,7 @@ impl Context {
         // The bypass_startup_checks condition is after the function call since we need that
         // function to run even if we wan to discard its output (it fetches and stores the current
         // version we're about to release).
-        if self.current_version_same(&previous_version)? && !self.config.bypass_startup_checks {
+        if self.current_version_same(previous_version)? && !self.config.bypass_startup_checks {
             println!("version hasn't changed, skipping");
             println!("set PROMOTE_RELEASE_BYPASS_STARTUP_CHECKS=1 to bypass the check");
             return Ok(());
@@ -201,7 +201,7 @@ impl Context {
 
         // Removes files that we are not shipping from the files we're about to upload.
         if let Some(shipped_files) = &execution.shipped_files {
-            self.prune_unused_files(&shipped_files)?;
+            self.prune_unused_files(shipped_files)?;
         }
 
         // Sign both the downloaded artifacts and all the generated manifests. The signatures
@@ -548,7 +548,7 @@ impl Context {
                 .arg("--only-show-errors")
                 .arg(format!("{}/", docs.display()))
                 .arg(&dst))?;
-            self.invalidate_docs(&version)?;
+            self.invalidate_docs(version)?;
         }
 
         Ok(())
@@ -672,7 +672,7 @@ impl Context {
     fn download_file(&mut self, url: &str) -> Result<Option<String>, Error> {
         self.handle.reset();
         self.handle.get(true)?;
-        self.handle.url(&url)?;
+        self.handle.url(url)?;
         let mut result = Vec::new();
         {
             let mut t = self.handle.transfer();

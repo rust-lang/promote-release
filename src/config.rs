@@ -139,7 +139,7 @@ pub(crate) struct RepositoryCredentials {
 
 impl RepositoryCredentials {
     pub(crate) fn as_git2_credentials(&self) -> Result<Cred, git2::Error> {
-        Ok(Cred::userpass_plaintext(&self.username, &self.password)?)
+        Cred::userpass_plaintext(&self.username, &self.password)
     }
 }
 
