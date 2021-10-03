@@ -1,5 +1,6 @@
 use crate::Context;
 use anyhow::{Context as _, Error};
+use git2::Cred;
 use std::env::VarError;
 use std::str::FromStr;
 
@@ -64,6 +65,9 @@ pub(crate) struct Config {
     pub(crate) num_threads: usize,
     /// URL of the git repository containing the Rust source code.
     pub(crate) repository: String,
+    /// Username and password to authenticate with the git repository, separated by a colon.
+    /// Example: `pietro:Super5ecretP@ssword`
+    pub(crate) repository_authentication: Option<RepositoryCredentials>,
     /// Remote HTTP host artifacts will be uploaded to. Note that this is *not* the same as what's
     /// configured in `config.toml` for rustbuild, it's just the *host* that we're uploading to and
     /// going to be looking at urls from.
@@ -117,12 +121,38 @@ impl Config {
             num_threads: default_env("NUM_THREADS", num_cpus::get())?,
             override_commit: maybe_env("OVERRIDE_COMMIT")?,
             repository: default_env("REPOSITORY", "https://github.com/rust-lang/rust.git".into())?,
+            repository_authentication: maybe_env("REPOSITORY_AUTHENTICATION")?,
             s3_endpoint_url: maybe_env("S3_ENDPOINT_URL")?,
             skip_cloudfront_invalidations: bool_env("SKIP_CLOUDFRONT_INVALIDATIONS")?,
             upload_addr: require_env("UPLOAD_ADDR")?,
             upload_bucket: require_env("UPLOAD_BUCKET")?,
             upload_dir: require_env("UPLOAD_DIR")?,
             wip_recompress: bool_env("WIP_RECOMPRESS")?,
+        })
+    }
+}
+
+pub(crate) struct RepositoryCredentials {
+    username: String,
+    password: String,
+}
+
+impl RepositoryCredentials {
+    pub(crate) fn as_git2_credentials(&self) -> Result<Cred, git2::Error> {
+        Ok(Cred::userpass_plaintext(&self.username, &self.password)?)
+    }
+}
+
+impl FromStr for RepositoryCredentials {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self, Error> {
+        let (username, password) = input
+            .split_once(':')
+            .ok_or_else(|| anyhow::anyhow!("username and password must be separated by a `:`"))?;
+        Ok(Self {
+            username: username.into(),
+            password: password.into(),
         })
     }
 }

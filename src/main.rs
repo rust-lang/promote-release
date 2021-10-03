@@ -101,10 +101,23 @@ impl Context {
         let temp = tempfile::tempdir()?;
         let repo = git2::Repository::init(temp.path())?;
 
-        let mut remote = repo.remote("origin", &self.config.repository)?;
-        remote.connect(git2::Direction::Fetch)?;
+        let mut callbacks = git2::RemoteCallbacks::new();
+        callbacks.credentials(|_, _, _| {
+            self.config
+                .repository_authentication
+                .as_ref()
+                .map(|c| c.as_git2_credentials())
+                .unwrap_or_else(|| git2::Cred::default())
+        });
 
-        for head in remote.list()? {
+        println!(
+            "connecting to {} to fetch the latest commit",
+            self.config.repository
+        );
+
+        let mut remote = repo.remote("origin", &self.config.repository)?;
+        let connection = remote.connect_auth(git2::Direction::Fetch, Some(callbacks), None)?;
+        for head in connection.list()? {
             if head.name() == git_ref {
                 return Ok(hex::encode(head.oid().as_bytes()));
             }
