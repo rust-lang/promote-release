@@ -31,11 +31,21 @@ environment variable while calling `rustup`:
 RUSTUP_DIST_SERVER="http://localhost:9000/static"
 ```
 
-You can also release a specific commit by providing its full hash as the second
+There are multiple modes you can test locally through the `./run.sh` script, by
+passing the mode name as the second argument. Each mode configures the local
+environment differently, to simulate different production scenarios. The modes
+currently available are:
+
+* `standard`: most of the Rust releases, including regular nightlies, betas or
+  stables.
+* `security`: private releases done to address security issues, fetching from
+  private artifacts buckets and private git repositories.
+
+You can also release a specific commit by providing its full hash as the third
 argument of `./run.sh`:
 
 ```
-./run.sh nightly 0000000000000000000000000000000000000000
+./run.sh nightly standard 0000000000000000000000000000000000000000
 ```
 
 ### Adding additional files to the local release

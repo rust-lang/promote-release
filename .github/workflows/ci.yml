@@ -35,6 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         channel: [stable, beta, nightly]
+        mode: [standard, security]
 
     steps:
       - name: Clone the source code
@@ -47,7 +48,7 @@ jobs:
         run: docker-compose up -d
 
       - name: Run the local release process for channel ${{ matrix.channel }}
-        run: ./run.sh ${{ matrix.channel }}
+        run: ./run.sh ${{ matrix.channel }} ${{ matrix.mode }}
 
       - name: Validate the generated signatures
         run: docker-compose exec -T local /src/local/check-signature.sh ${{ matrix.channel }}

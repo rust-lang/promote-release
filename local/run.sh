@@ -36,7 +36,8 @@ DOWNLOAD_STANDALONE=(
 )
 
 channel="$1"
-override_commit="$2"
+mode="$2"
+override_commit="$3"
 
 # Nightly is on the default branch
 if [[ "${channel}" = "nightly" ]]; then
@@ -116,6 +117,15 @@ export PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS="yes"
 if [[ "${override_commit}" != "" ]]; then
     export PROMOTE_RELEASE_OVERRIDE_COMMIT="${override_commit}"
 fi
+case "${mode}" in
+    standard)
+        export PROMOTE_RELEASE_REPOSITORY="https://github.com/rust-lang/rust.git"
+        ;;
+    security)
+        export PROMOTE_RELEASE_REPOSITORY="http://localhost:8000/rust-lang/rust.git"
+        export PROMOTE_RELEASE_REPOSITORY_AUTHENTICATION="username:ghp_foobar"
+        ;;
+esac
 
 echo "==> starting promote-release"
 /src/target/release/promote-release /persistent/release "${channel}"

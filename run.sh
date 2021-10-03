@@ -6,11 +6,16 @@ set -euo pipefail
 IFS=$'\n\t'
 
 if [[ "$#" -lt 1 ]] || [[ "$#" -gt 2 ]]; then
-    echo "Usage: $0 <channel> [commit]"
+    echo "Usage: $0 <channel> [mode] [commit]"
+    echo
+    echo "Mode can be:"
+    echo " - standard (default)"
+    echo " - security"
     exit 1
 fi
 channel="$1"
-override_commit="${2-}"
+mode="${2-standard}"
+override_commit="${3-}"
 
 container_id="$(docker-compose ps -q local)"
 if [[ "${container_id}" == "" ]]; then
@@ -31,4 +36,4 @@ fi
 cargo build --release
 
 # Run the command inside the docker environment.
-docker-compose exec -T local /src/local/run.sh "${channel}" "${override_commit}"
+docker-compose exec -T local /src/local/run.sh "${channel}" "${mode}" "${override_commit}"

@@ -5,9 +5,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-MINIO_HOST="minio"
-MINIO_PORT="9000"
-MINIO_URL="http://${MINIO_HOST}:${MINIO_PORT}"
+MINIO_URL="http://minio:9000"
 MINIO_ACCESS_KEY="access_key"
 MINIO_SECRET_KEY="secret_key"
 
@@ -23,8 +21,8 @@ while ! curl --silent --fail "${MINIO_URL}/minio/health/cluster"; do
 done
 echo "minio is now available"
 
-echo "starting a proxy for minio"
-socat "tcp-listen:${MINIO_PORT},reuseaddr,fork" "tcp:${MINIO_HOST}:${MINIO_PORT}" &
+echo "starting nginx to proxy minio and github"
+nginx -c /src/local/nginx.conf
 
 # Configure the minio client to talk to the right instance.
 echo "configuring cli access to minio"
