@@ -77,6 +77,9 @@ pub(crate) struct Config {
     pub(crate) upload_addr: String,
     /// The S3 bucket that release artifacts will be uploaded to.
     pub(crate) upload_bucket: String,
+    /// The storage class artifacts are created in. Primarily used for testing
+    /// (we default to INTELLIGENT_TIERING if not set).
+    pub(crate) storage_class: String,
     /// The S3 directory that release artifacts will be uploaded to.
     pub(crate) upload_dir: String,
     /// Whether to run the checks at startup that prevent a potentially unwanted release from
@@ -121,6 +124,7 @@ impl Config {
             skip_cloudfront_invalidations: bool_env("SKIP_CLOUDFRONT_INVALIDATIONS")?,
             upload_addr: require_env("UPLOAD_ADDR")?,
             upload_bucket: require_env("UPLOAD_BUCKET")?,
+            storage_class: default_env("UPLOAD_STORAGE_CLASS", "INTELLIGENT_TIERING".into())?,
             upload_dir: require_env("UPLOAD_DIR")?,
             wip_recompress: bool_env("WIP_RECOMPRESS")?,
         })

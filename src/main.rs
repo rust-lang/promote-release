@@ -441,6 +441,8 @@ impl Context {
             .arg("REPLACE")
             .arg("--cache-control")
             .arg("public")
+            .arg("--storage-class")
+            .arg(&self.config.storage_class)
             .arg(format!("{}/", self.dl_dir().display()))
             .arg(&dst))
     }
@@ -519,6 +521,8 @@ impl Context {
         run(self
             .aws_s3()
             .arg("sync")
+            .arg("--storage-class")
+            .arg(&self.config.storage_class)
             .arg("--delete")
             .arg("--only-show-errors")
             .arg(format!("{}/", docs.display()))
@@ -531,6 +535,8 @@ impl Context {
             run(self
                 .aws_s3()
                 .arg("sync")
+                .arg("--storage-class")
+                .arg(&self.config.storage_class)
                 .arg("--delete")
                 .arg("--only-show-errors")
                 .arg(format!("{}/", docs.display()))
@@ -561,6 +567,8 @@ impl Context {
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
+            .arg("--storage-class")
+            .arg(&self.config.storage_class)
             .arg(format!("{}/", self.dl_dir().display()))
             .arg(&dst))
     }
