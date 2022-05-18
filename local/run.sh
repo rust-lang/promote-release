@@ -29,6 +29,13 @@ DOWNLOAD_COMPONENTS=(
 DOWNLOAD_COMPONENT_TARGETS=(
     "x86_64-unknown-linux-gnu"
 )
+# These components are necessary for build-manifest to run, as they're fallback
+# targets from a host of tier-2 triples. See build-manifest/src/main.rs
+# DOCS_FALLBACK.
+DOWNLOAD_DOCS_TARGETS=(
+    "x86_64-apple-darwin"
+    "aarch64-unknown-linux-gnu"
+)
 # Files to download that are not rustup components. No mangling is done on the
 # file name, so include its full path.
 DOWNLOAD_STANDALONE=(
@@ -87,6 +94,9 @@ for target in "${DOWNLOAD_COMPONENT_TARGETS[@]}"; do
         download "${component}-${release}-${target}.tar.xz"
     done
 done
+for target in "${DOWNLOAD_DOCS_TARGETS[@]}"; do
+    download "rust-docs-${release}-${target}.tar.xz"
+done
 for file in "${DOWNLOAD_STANDALONE[@]}"; do
     download "${file}"
 done
@@ -106,6 +116,7 @@ export PROMOTE_RELEASE_GPG_KEY_FILE="/persistent/gpg-key"
 export PROMOTE_RELEASE_GPG_PASSWORD_FILE="/persistent/gpg-password"
 export PROMOTE_RELEASE_UPLOAD_ADDR="http://localhost:9000/static"
 export PROMOTE_RELEASE_UPLOAD_BUCKET="static"
+export PROMOTE_RELEASE_UPLOAD_STORAGE_CLASS="STANDARD"
 export PROMOTE_RELEASE_UPLOAD_DIR="dist"
 # Environment variables used only by local releases
 export PROMOTE_RELEASE_BYPASS_STARTUP_CHECKS="1"
