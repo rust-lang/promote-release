@@ -1,5 +1,6 @@
 use anyhow::Error;
 use hyper::{Body, Request, Response, Server, StatusCode};
+use std::thread::JoinHandle;
 use std::{net::SocketAddr, sync::Arc};
 use std::{path::PathBuf, process::Command};
 use tempfile::TempDir;
@@ -8,7 +9,7 @@ use tokio::{runtime::Runtime, sync::oneshot::Sender};
 use crate::config::Channel;
 
 pub(crate) struct SmokeTester {
-    runtime: Runtime,
+    runtime: JoinHandle<Runtime>,
     server_addr: SocketAddr,
     shutdown_send: Sender<()>,
 }
@@ -22,23 +23,42 @@ impl SmokeTester {
             let paths = paths.clone();
             async move {
                 Ok::<_, Error>(hyper::service::service_fn(move |req| {
-                    server_handler(req, paths.clone())
+                    let paths = paths.clone();
+                    async move { server_handler(req, paths) }
                 }))
             }
         });
 
         let (shutdown_send, shutdown_recv) = tokio::sync::oneshot::channel::<()>();
-
-        let runtime = Runtime::new()?;
-        let (server, server_addr) = runtime.enter(|| {
+        let server_mtx = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let server_mtx_external = server_mtx.clone();
+        let runtime = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let _guard = runtime.enter();
             let server = Server::bind(&addr).serve(service);
             let server_addr = server.local_addr();
+            *server_mtx.lock().unwrap() = Some(server_addr);
             let server = server.with_graceful_shutdown(async {
-                shutdown_recv.await.ok();
+                shutdown_recv.await.unwrap();
+                eprintln!("Shutting down smoke test server...");
             });
-            (server, server_addr)
+            runtime.block_on(server).unwrap();
+            runtime
         });
-        runtime.spawn(server);
+
+        let server_addr = loop {
+            let value = server_mtx_external.lock().unwrap().take();
+            match value {
+                None => {
+                    eprintln!("Waiting for server to boot...");
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+                Some(other) => break other,
+            }
+        };
 
         Ok(Self {
             runtime,
@@ -88,16 +108,13 @@ impl SmokeTester {
         self.shutdown_send
             .send(())
             .expect("failed to send shutdown message to the server");
-        self.runtime.shutdown_background();
+        self.runtime.join().unwrap().shutdown_background();
 
         Ok(())
     }
 }
 
-async fn server_handler(
-    req: Request<Body>,
-    paths: Arc<Vec<PathBuf>>,
-) -> Result<Response<Body>, Error> {
+fn server_handler(req: Request<Body>, paths: Arc<Vec<PathBuf>>) -> Result<Response<Body>, Error> {
     let file_name = match req.uri().path().split('/').last() {
         Some(file_name) => file_name,
         None => return not_found(),
@@ -105,7 +122,7 @@ async fn server_handler(
     for directory in &*paths {
         let path = directory.join(file_name);
         if path.is_file() {
-            let content = tokio::fs::read(&path).await?;
+            let content = std::fs::read(&path)?;
             return Ok(Response::new(content.into()));
         }
     }
