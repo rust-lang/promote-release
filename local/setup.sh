@@ -18,7 +18,7 @@ trap exit EXIT
 
 # Wait until minio finished loading
 echo "waiting for minio to start"
-while ! curl --silent --fail "${MINIO_URL}/minio/health/cluster"; do
+while ! curl --silent --fail "${MINIO_URL}/minio/health/live"; do
     sleep 0.1
 done
 echo "minio is now available"
