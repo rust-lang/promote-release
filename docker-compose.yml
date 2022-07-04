@@ -3,7 +3,7 @@ version: '3'
 
 services:
   minio:
-    image: minio/minio
+    image: quay.io/minio/minio
     command: minio server /data
     ports:
       - 9000:9000
