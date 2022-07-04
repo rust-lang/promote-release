@@ -5,7 +5,7 @@
 # regularly takes 2 minutes to download 20MB of binary). The only other way
 # they distribute the CLI is from Docker, so we load their image as a stage and
 # then copy the binary from it later in the build.
-FROM minio/mc AS mc
+FROM quay.io/minio/mc AS mc
 
 FROM ubuntu:focal
 
