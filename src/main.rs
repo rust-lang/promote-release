@@ -2,6 +2,7 @@
 
 mod build_manifest;
 mod config;
+mod github;
 mod sign;
 mod smoke_test;
 
@@ -19,6 +20,7 @@ use anyhow::Error;
 use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
+use github::CreateTag;
 use rayon::prelude::*;
 use xz2::read::XzDecoder;
 
@@ -167,6 +169,7 @@ impl Context {
         // Ok we've now determined that a release needs to be done.
 
         let mut signer = Signer::new(&self.config)?;
+
         let build_manifest = BuildManifest::new(self)?;
         let smoke_test = SmokeTester::new(&[self.smoke_manifest_dir(), self.dl_dir()])?;
 
@@ -219,6 +222,11 @@ impl Context {
         // Clean up after ourselves to avoid leaving gigabytes of artifacts
         // around.
         let _ = fs::remove_dir_all(&self.dl_dir());
+
+        // We do this last, since it triggers triagebot posting the GitHub
+        // release announcement (and since this is not actually really
+        // important).
+        self.tag_release(&rev, &mut signer)?;
 
         Ok(())
     }
@@ -605,6 +613,55 @@ impl Context {
             .arg(format!("file://{}", dst.display()))
             .arg("--distribution-id")
             .arg(distribution_id))?;
+
+        Ok(())
+    }
+
+    fn tag_release(&mut self, rustc_commit: &str, signer: &mut Signer) -> Result<(), Error> {
+        if self.config.channel != Channel::Stable {
+            // We don't tag non-stable releases
+            return Ok(());
+        }
+
+        if let Some(repo) = self.config.rustc_tag_repository.clone() {
+            self.tag_repository(signer, &repo, rustc_commit)?;
+        }
+
+        Ok(())
+    }
+
+    fn tag_repository(
+        &mut self,
+        signer: &mut Signer,
+        repository: &str,
+        commit: &str,
+    ) -> Result<(), Error> {
+        let mut github = if let Some(github) = self.config.github() {
+            github
+        } else {
+            eprintln!("Skipping tagging - GitHub credentials not configured");
+            return Ok(());
+        };
+
+        let version = self.current_version.as_ref().expect("has current version");
+        let tag_name = version.to_owned();
+        let username = "rust-lang/promote-release";
+        let email = "release-team@rust-lang.org";
+        let message = signer.git_signed_tag(
+            commit,
+            &tag_name,
+            username,
+            email,
+            &format!("{} release", version),
+        )?;
+
+        github.token(repository)?.tag(CreateTag {
+            commit,
+            tag_name: &tag_name,
+            message: &message,
+            tagger_name: username,
+            tagger_email: email,
+        })?;
 
         Ok(())
     }
