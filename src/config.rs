@@ -1,3 +1,4 @@
+use crate::github::Github;
 use crate::Context;
 use anyhow::{Context as _, Error};
 use std::env::VarError;
@@ -103,6 +104,28 @@ pub(crate) struct Config {
     /// Whether to skip invalidating the CloudFront distributions. This is useful when running the
     /// release process locally, without access to the production AWS account.
     pub(crate) skip_cloudfront_invalidations: bool,
+
+    /// Where to tag stable rustc releases.
+    ///
+    /// This repository should have content write permissions with the github
+    /// app configuration.
+    ///
+    /// Should be a org/repo code, e.g., rust-lang/rust.
+    pub(crate) rustc_tag_repository: Option<String>,
+
+    /// This is a github app private key, used for the release steps which
+    /// require action on GitHub (e.g., kicking off a new thanks GHA build,
+    /// opening pull requests against the blog for dev releases, promoting
+    /// branches). Not all of this is implemented yet but it's all going to use
+    /// tokens retrieved from the github app here.
+    ///
+    /// Currently this isn't really exercised in CI, but that might change in
+    /// the future with a github app scoped to a 'fake' org or something like
+    /// that.
+    pub(crate) github_app_key: Option<String>,
+
+    /// The app ID associated with the private key being passed.
+    pub(crate) github_app_id: Option<u32>,
 }
 
 impl Config {
@@ -127,7 +150,18 @@ impl Config {
             storage_class: default_env("UPLOAD_STORAGE_CLASS", "INTELLIGENT_TIERING".into())?,
             upload_dir: require_env("UPLOAD_DIR")?,
             wip_recompress: bool_env("WIP_RECOMPRESS")?,
+            rustc_tag_repository: maybe_env("RUSTC_TAG_REPOSITORY")?,
+            github_app_key: maybe_env("GITHUB_APP_KEY")?,
+            github_app_id: maybe_env("GITHUB_APP_ID")?,
         })
+    }
+
+    pub(crate) fn github(&self) -> Option<Github> {
+        if let (Some(key), Some(id)) = (&self.github_app_key, self.github_app_id) {
+            Some(Github::new(key, id))
+        } else {
+            None
+        }
     }
 }
 

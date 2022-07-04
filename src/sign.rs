@@ -11,6 +11,7 @@ use rayon::prelude::*;
 use sha2::Digest;
 use std::{
     collections::HashMap,
+    fmt::Write,
     fs::File,
     path::{Path, PathBuf},
     time::Instant,
@@ -141,6 +142,65 @@ impl Signer {
         pgp::armor::write(&content, BlockType::Signature, &mut dest, None)?;
 
         Ok(())
+    }
+
+    /// Returns a message suitable for passing to `git tag -m` in order to make
+    /// a signed tag.
+    pub fn git_signed_tag(
+        &self,
+        commit: &str,
+        tag: &str,
+        username: &str,
+        email: &str,
+        message: &str,
+    ) -> Result<String, Error> {
+        let key_function = || self.gpg_password.trim().to_string();
+
+        let now = chrono::Utc::now();
+        // This was discovered by running git tag with a custom gpg bin set and
+        // capturing the signed text; we avoid calling out to gpg from within
+        // git to avoid a dependency on the ~global gpg home directory's signing
+        // keys (and potential need to enter the signing key password). This
+        // also lets us more tightly control what we're signing.
+        let mut message = format!("{}\n", message);
+        let mut payload = format!("object {commit}\ntype commit\ntag {tag}\n");
+        let timestamp = now.timestamp();
+        write!(
+            &mut payload,
+            "tagger {username} <{email}> {timestamp} +0000\n\n"
+        )
+        .unwrap();
+        payload.push_str(&message);
+
+        let pubkey = self.gpg_key.public_key();
+
+        // The packets here match the ones used by git when signing tags; it's
+        // not necessarily the case that they're exactly what's needed but this
+        // seems to work well in practice.
+        let sign_config = SignatureConfig {
+            version: SignatureVersion::V4,
+            typ: SignatureType::Binary,
+            pub_alg: self.gpg_key.algorithm(),
+            hash_alg: HashAlgorithm::SHA2_512,
+            issuer: Some(pubkey.key_id()),
+            created: Some(now),
+            hashed_subpackets: vec![
+                Subpacket::IssuerFingerprint(
+                    pgp::types::KeyVersion::V4,
+                    self.gpg_key.public_key().fingerprint().into(),
+                ),
+                Subpacket::SignatureCreationTime(now),
+            ],
+            unhashed_subpackets: vec![Subpacket::Issuer(pubkey.key_id())],
+        };
+
+        let mut dest = Vec::new();
+        let content =
+            Packet::from(sign_config.sign(&self.gpg_key, key_function, payload.as_bytes())?);
+        pgp::armor::write(&content, BlockType::Signature, &mut dest, None)?;
+        message.push_str(&String::from_utf8(dest)?);
+
+        Ok(message)
     }
 }
 
