@@ -64,6 +64,7 @@ impl Github {
 
     fn start_jwt_request(&mut self) -> anyhow::Result<()> {
         self.client.reset();
+        self.client.useragent("rust-lang/promote-release").unwrap();
         let mut headers = curl::easy::List::new();
         headers.append(&format!("Authorization: Bearer {}", self.jwt()))?;
         self.client.http_headers(headers)?;
@@ -81,7 +82,11 @@ impl Github {
         struct InstallationResponse {
             id: u32,
         }
-        let installation_id = send_request::<InstallationResponse>(&mut self.client)?.id;
+        let installation_id = self
+            .client
+            .without_body()
+            .send_with_response::<InstallationResponse>()?
+            .id;
 
         self.start_jwt_request()?;
         self.client.post(true)?;
@@ -92,7 +97,11 @@ impl Github {
         struct TokenResponse {
             token: String,
         }
-        let token = send_request::<TokenResponse>(&mut self.client)?.token;
+        let token = self
+            .client
+            .without_body()
+            .send_with_response::<TokenResponse>()?
+            .token;
         Ok(RepositoryClient {
             github: self,
             repo: repository.to_owned(),
@@ -104,6 +113,7 @@ impl Github {
 impl RepositoryClient<'_> {
     fn start_new_request(&mut self) -> anyhow::Result<()> {
         self.github.client.reset();
+        self.github.client.useragent("rust-lang/promote-release")?;
         let mut headers = curl::easy::List::new();
         headers.append(&format!("Authorization: token {}", self.token))?;
         self.github.client.http_headers(headers)?;
@@ -111,6 +121,30 @@ impl RepositoryClient<'_> {
     }
 
     pub(crate) fn tag(&mut self, tag: CreateTag<'_>) -> anyhow::Result<()> {
+        #[derive(serde::Serialize)]
+        struct CreateTagInternal<'a> {
+            tag: &'a str,
+            message: &'a str,
+            /// sha of the object being tagged
+            object: &'a str,
+            #[serde(rename = "type")]
+            type_: &'a str,
+            tagger: CreateTagTaggerInternal<'a>,
+        }
+
+        #[derive(serde::Serialize)]
+        struct CreateTagTaggerInternal<'a> {
+            name: &'a str,
+            email: &'a str,
+        }
+
+        #[derive(serde::Serialize)]
+        struct CreateRefInternal<'a> {
+            #[serde(rename = "ref")]
+            ref_: &'a str,
+            sha: &'a str,
+        }
+
         #[derive(serde::Deserialize)]
         struct CreatedTag {
             sha: String,
@@ -121,9 +155,10 @@ impl RepositoryClient<'_> {
             "https://api.github.com/repos/{repository}/git/tags",
             repository = self.repo,
         ))?;
-        let created = send_request_body::<CreatedTag, _>(
-            &mut self.github.client,
-            CreateTagInternal {
+        let created = self
+            .github
+            .client
+            .with_body(CreateTagInternal {
                 tag: tag.tag_name,
                 message: tag.message,
                 object: tag.commit,
@@ -132,8 +167,8 @@ impl RepositoryClient<'_> {
                     name: tag.tagger_name,
                     email: tag.tagger_email,
                 },
-            },
-        )?;
+            })
+            .send_with_response::<CreatedTag>()?;
 
         // This mostly exists to make sure the request is successful rather than
         // really checking the created ref (which we already know).
@@ -149,13 +184,34 @@ impl RepositoryClient<'_> {
             "https://api.github.com/repos/{repository}/git/refs",
             repository = self.repo,
         ))?;
-        send_request_body::<CreatedTagRef, _>(
-            &mut self.github.client,
-            CreateRefInternal {
+        self.github
+            .client
+            .with_body(CreateRefInternal {
                 ref_: &format!("refs/tags/{}", tag.tag_name),
                 sha: &created.sha,
-            },
-        )?;
+            })
+            .send_with_response::<CreatedTagRef>()?;
+
+        Ok(())
+    }
+
+    pub(crate) fn workflow_dispatch(&mut self, workflow: &str, branch: &str) -> anyhow::Result<()> {
+        #[derive(serde::Serialize)]
+        struct Request<'a> {
+            #[serde(rename = "ref")]
+            ref_: &'a str,
+        }
+        self.start_new_request()?;
+        self.github.client.post(true)?;
+        self.github.client.url(&format!(
+            "https://api.github.com/repos/{repository}/actions/workflows/{workflow}/dispatches",
+            repository = self.repo,
+        ))?;
+
+        self.github
+            .client
+            .with_body(Request { ref_: branch })
+            .send()?;
 
         Ok(())
     }
@@ -170,66 +226,68 @@ pub(crate) struct CreateTag<'a> {
     pub(crate) tagger_email: &'a str,
 }
 
-#[derive(serde::Serialize)]
-struct CreateTagInternal<'a> {
-    tag: &'a str,
-    message: &'a str,
-    /// sha of the object being tagged
-    object: &'a str,
-    #[serde(rename = "type")]
-    type_: &'a str,
-    tagger: CreateTagTaggerInternal<'a>,
+trait BodyExt {
+    fn with_body<S>(&mut self, body: S) -> Request<'_, S>;
+    fn without_body(&mut self) -> Request<'_, ()>;
 }
 
-#[derive(serde::Serialize)]
-struct CreateTagTaggerInternal<'a> {
-    name: &'a str,
-    email: &'a str,
-}
-
-#[derive(serde::Serialize)]
-struct CreateRefInternal<'a> {
-    #[serde(rename = "ref")]
-    ref_: &'a str,
-    sha: &'a str,
-}
-
-fn send_request_body<T: serde::de::DeserializeOwned, S: serde::Serialize>(
-    client: &mut Easy,
-    body: S,
-) -> anyhow::Result<T> {
-    use std::io::Read;
-    client.useragent("rust-lang/promote-release").unwrap();
-    let mut response = Vec::new();
-    let body = serde_json::to_vec(&body).unwrap();
-    {
-        let mut transfer = client.transfer();
-        let mut body = &body[..];
-        // The unwrap in the read_function is basically guaranteed to not
-        // happen: reading into a slice can't fail. We can't use `?` since the
-        // return type inside transfer isn't compatible with io::Error.
-        transfer.read_function(move |dest| Ok(body.read(dest).unwrap()))?;
-        transfer.write_function(|new_data| {
-            response.extend_from_slice(new_data);
-            Ok(new_data.len())
-        })?;
-        transfer.perform()?;
+impl BodyExt for Easy {
+    fn with_body<S>(&mut self, body: S) -> Request<'_, S> {
+        Request {
+            body: Some(body),
+            client: self,
+        }
     }
-    serde_json::from_slice(&response)
-        .with_context(|| format!("{}", String::from_utf8_lossy(&response)))
+    fn without_body(&mut self) -> Request<'_, ()> {
+        Request {
+            body: None,
+            client: self,
+        }
+    }
 }
 
-fn send_request<T: serde::de::DeserializeOwned>(client: &mut Easy) -> anyhow::Result<T> {
-    client.useragent("rust-lang/promote-release").unwrap();
-    let mut response = Vec::new();
-    {
-        let mut transfer = client.transfer();
-        transfer.write_function(|new_data| {
-            response.extend_from_slice(new_data);
-            Ok(new_data.len())
-        })?;
-        transfer.perform()?;
+struct Request<'a, S> {
+    body: Option<S>,
+    client: &'a mut Easy,
+}
+
+impl<S: serde::Serialize> Request<'_, S> {
+    fn send_with_response<T: serde::de::DeserializeOwned>(self) -> anyhow::Result<T> {
+        use std::io::Read;
+        let mut response = Vec::new();
+        let body = self.body.map(|body| serde_json::to_vec(&body).unwrap());
+        {
+            let mut transfer = self.client.transfer();
+            // The unwrap in the read_function is basically guaranteed to not
+            // happen: reading into a slice can't fail. We can't use `?` since the
+            // return type inside transfer isn't compatible with io::Error.
+            if let Some(mut body) = body.as_deref() {
+                transfer.read_function(move |dest| Ok(body.read(dest).unwrap()))?;
+            }
+            transfer.write_function(|new_data| {
+                response.extend_from_slice(new_data);
+                Ok(new_data.len())
+            })?;
+            transfer.perform()?;
+        }
+        serde_json::from_slice(&response)
+            .with_context(|| format!("{}", String::from_utf8_lossy(&response)))
     }
-    serde_json::from_slice(&response)
-        .with_context(|| format!("{}", String::from_utf8_lossy(&response)))
+
+    fn send(self) -> anyhow::Result<()> {
+        use std::io::Read;
+        let body = self.body.map(|body| serde_json::to_vec(&body).unwrap());
+        {
+            let mut transfer = self.client.transfer();
+            // The unwrap in the read_function is basically guaranteed to not
+            // happen: reading into a slice can't fail. We can't use `?` since the
+            // return type inside transfer isn't compatible with io::Error.
+            if let Some(mut body) = body.as_deref() {
+                transfer.read_function(move |dest| Ok(body.read(dest).unwrap()))?;
+            }
+            transfer.perform()?;
+        }
+
+        Ok(())
+    }
 }

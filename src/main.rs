@@ -20,7 +20,7 @@ use anyhow::Error;
 use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
-use github::CreateTag;
+use github::{CreateTag, Github};
 use rayon::prelude::*;
 use xz2::read::XzDecoder;
 
@@ -623,8 +623,20 @@ impl Context {
             return Ok(());
         }
 
+        let mut github = if let Some(github) = self.config.github() {
+            github
+        } else {
+            eprintln!("Skipping tagging - GitHub credentials not configured");
+            return Ok(());
+        };
+
         if let Some(repo) = self.config.rustc_tag_repository.clone() {
-            self.tag_repository(signer, &repo, rustc_commit)?;
+            self.tag_repository(signer, &mut github, &repo, rustc_commit)?;
+
+            // Once we've tagged rustc, kick off a thanks workflow run.
+            github
+                .token("rust-lang/thanks")?
+                .workflow_dispatch("ci.yml", "master")?;
         }
 
         Ok(())
@@ -633,16 +645,10 @@ impl Context {
     fn tag_repository(
         &mut self,
         signer: &mut Signer,
+        github: &mut Github,
         repository: &str,
         commit: &str,
     ) -> Result<(), Error> {
-        let mut github = if let Some(github) = self.config.github() {
-            github
-        } else {
-            eprintln!("Skipping tagging - GitHub credentials not configured");
-            return Ok(());
-        };
-
         let version = self.current_version.as_ref().expect("has current version");
         let tag_name = version.to_owned();
         let username = "rust-lang/promote-release";
