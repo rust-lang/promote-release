@@ -47,7 +47,40 @@ impl std::fmt::Display for Channel {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Action {
+    /// This is the default action, what we'll do if the environment variable
+    /// isn't set. It takes the configured channel and pushes artifacts into the
+    /// appropriate buckets, taking care of other helper tasks along the way.
+    PromoteRelease,
+
+    /// This promotes the branches up a single release:
+    ///
+    /// Let $stable, $beta, $master be the tips of each branch (when starting).
+    ///
+    /// * Set stable to $beta.
+    /// * Set beta to $master (ish, look for the version bump).
+    /// * Create a rust-lang/cargo branch for the appropriate beta commit.
+    /// * Post a PR against the newly created beta branch bump src/ci/channel to `beta`.
+    PromoteBranches,
+}
+
+impl FromStr for Action {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
+            "promote-release" => Ok(Action::PromoteRelease),
+            "promote-branches" => Ok(Action::PromoteBranches),
+            _ => anyhow::bail!("unknown channel: {}", input),
+        }
+    }
+}
+
 pub(crate) struct Config {
+    /// This is the action we're expecting to take.
+    pub(crate) action: Action,
+
     /// The channel we're currently releasing.
     pub(crate) channel: Channel,
     /// CloudFront distribution ID for doc.rust-lang.org.
@@ -153,6 +186,7 @@ pub(crate) struct Config {
 impl Config {
     pub(crate) fn from_env() -> Result<Self, Error> {
         Ok(Self {
+            action: default_env("ACTION", Action::PromoteRelease)?,
             bypass_startup_checks: bool_env("BYPASS_STARTUP_CHECKS")?,
             channel: require_env("CHANNEL")?,
             cloudfront_doc_id: require_env("CLOUDFRONT_DOC_ID")?,

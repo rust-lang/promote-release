@@ -226,6 +226,38 @@ impl RepositoryClient<'_> {
         Ok(())
     }
 
+    pub(crate) fn update_ref(&mut self, name: &str, sha: &str, force: bool) -> anyhow::Result<()> {
+        // This mostly exists to make sure the request is successful rather than
+        // really checking the created ref (which we already know).
+        #[derive(serde::Deserialize)]
+        struct CreatedRef {
+            #[serde(rename = "ref")]
+            #[allow(unused)]
+            ref_: String,
+        }
+        #[derive(serde::Serialize)]
+        struct UpdateRefInternal<'a> {
+            sha: &'a str,
+            force: bool,
+        }
+
+        self.start_new_request()?;
+        // We want curl to read the request body, so configure POST.
+        self.github.client.post(true)?;
+        // However, the actual request should be a PATCH request.
+        self.github.client.custom_request("PATCH")?;
+        self.github.client.url(&format!(
+            "https://api.github.com/repos/{repository}/git/refs/{name}",
+            repository = self.repo,
+        ))?;
+        self.github
+            .client
+            .with_body(UpdateRefInternal { sha, force })
+            .send_with_response::<CreatedRef>()?;
+
+        Ok(())
+    }
+
     pub(crate) fn workflow_dispatch(&mut self, workflow: &str, branch: &str) -> anyhow::Result<()> {
         #[derive(serde::Serialize)]
         struct Request<'a> {
@@ -308,6 +340,71 @@ impl RepositoryClient<'_> {
             })
             .send()?;
         Ok(())
+    }
+
+    /// Returns the last commit (SHA) on a repository's default branch which changed
+    /// the passed path.
+    pub(crate) fn last_commit_for_file(&mut self, path: &str) -> anyhow::Result<String> {
+        #[derive(serde::Deserialize)]
+        struct CommitData {
+            sha: String,
+        }
+        self.start_new_request()?;
+        self.github.client.get(true)?;
+        self.github.client.url(&format!(
+            "https://api.github.com/repos/{repo}/commits?path={path}",
+            repo = self.repo
+        ))?;
+        let mut commits = self
+            .github
+            .client
+            .without_body()
+            .send_with_response::<Vec<CommitData>>()?;
+        if commits.is_empty() {
+            anyhow::bail!("No commits for path {:?}", path);
+        }
+        Ok(commits.remove(0).sha)
+    }
+
+    /// Returns the contents of the file
+    pub(crate) fn read_file(&mut self, sha: Option<&str>, path: &str) -> anyhow::Result<GitFile> {
+        self.start_new_request()?;
+        self.github.client.get(true)?;
+        self.github.client.url(&format!(
+            "https://api.github.com/repos/{repo}/contents/{path}{maybe_ref}",
+            repo = self.repo,
+            maybe_ref = sha.map(|s| format!("?ref={}", s)).unwrap_or_default()
+        ))?;
+        self.github
+            .client
+            .without_body()
+            .send_with_response::<GitFile>()
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub(crate) enum GitFile {
+    File { encoding: String, content: String },
+    Submodule { sha: String },
+}
+
+impl GitFile {
+    pub(crate) fn submodule_sha(&self) -> &str {
+        if let GitFile::Submodule { sha } = self {
+            sha
+        } else {
+            panic!("{:?} not a submodule", self);
+        }
+    }
+
+    pub(crate) fn content(&self) -> anyhow::Result<String> {
+        if let GitFile::File { encoding, content } = self {
+            assert_eq!(encoding, "base64");
+            Ok(String::from_utf8(base64::decode(&content.trim())?)?)
+        } else {
+            panic!("content() on {:?}", self);
+        }
     }
 }
 

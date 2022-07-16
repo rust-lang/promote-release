@@ -1,5 +1,6 @@
 #![allow(clippy::rc_buffer)]
 
+mod branching;
 mod build_manifest;
 mod config;
 mod curl_helper;
@@ -71,8 +72,10 @@ impl Context {
 
     fn run(&mut self) -> Result<(), Error> {
         let _lock = self.lock()?;
-        self.do_release()?;
-
+        match self.config.action {
+            config::Action::PromoteRelease => self.do_release()?,
+            config::Action::PromoteBranches => self.do_branching()?,
+        }
         Ok(())
     }
 
