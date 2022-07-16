@@ -1,3 +1,4 @@
+use crate::discourse::Discourse;
 use crate::github::Github;
 use crate::Context;
 use anyhow::{Context as _, Error};
@@ -113,6 +114,27 @@ pub(crate) struct Config {
     /// Should be a org/repo code, e.g., rust-lang/rust.
     pub(crate) rustc_tag_repository: Option<String>,
 
+    /// Where to publish new blog PRs.
+    ///
+    /// We create a new PR announcing releases in this repository; currently we
+    /// don't automatically merge it (but that might change in the future).
+    ///
+    /// Should be a org/repo code, e.g., rust-lang/blog.rust-lang.org.
+    pub(crate) blog_repository: Option<String>,
+
+    /// The expected release date, for the blog post announcing dev-static
+    /// releases. Expected to be in YYYY-MM-DD format.
+    ///
+    /// This is used to produce the expected release date in blog posts and to
+    /// generate the release notes URL (targeting stable branch on
+    /// rust-lang/rust).
+    pub(crate) scheduled_release_date: Option<chrono::NaiveDate>,
+
+    /// These are Discourse configurations for where to post dev-static
+    /// announcements. Currently we only post dev release announcements.
+    pub(crate) discourse_api_key: Option<String>,
+    pub(crate) discourse_api_user: Option<String>,
+
     /// This is a github app private key, used for the release steps which
     /// require action on GitHub (e.g., kicking off a new thanks GHA build,
     /// opening pull requests against the blog for dev releases, promoting
@@ -151,6 +173,10 @@ impl Config {
             upload_dir: require_env("UPLOAD_DIR")?,
             wip_recompress: bool_env("WIP_RECOMPRESS")?,
             rustc_tag_repository: maybe_env("RUSTC_TAG_REPOSITORY")?,
+            blog_repository: maybe_env("BLOG_REPOSITORY")?,
+            scheduled_release_date: maybe_env("BLOG_SCHEDULED_RELEASE_DATE")?,
+            discourse_api_user: maybe_env("DISCOURSE_API_USER")?,
+            discourse_api_key: maybe_env("DISCOURSE_API_KEY")?,
             github_app_key: maybe_env("GITHUB_APP_KEY")?,
             github_app_id: maybe_env("GITHUB_APP_ID")?,
         })
@@ -162,6 +188,70 @@ impl Config {
         } else {
             None
         }
+    }
+    pub(crate) fn discourse(&self) -> Option<Discourse> {
+        if let (Some(key), Some(user)) = (&self.discourse_api_key, &self.discourse_api_user) {
+            Some(Discourse::new(
+                "https://internals.rust-lang.org".to_owned(),
+                user.clone(),
+                key.clone(),
+            ))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn blog_contents(
+        &self,
+        release: &str,
+        archive_date: &str,
+        for_blog: bool,
+        internals_url: Option<&str>,
+    ) -> Option<String> {
+        let scheduled_release_date = self.scheduled_release_date?;
+        let release_notes_url = format!(
+            "https://github.com/rust-lang/rust/blob/stable/RELEASES.md#version-{}-{}",
+            release.replace('.', ""),
+            scheduled_release_date.format("%Y-%m-%d"),
+        );
+        let human_date = scheduled_release_date.format("%B %d");
+        let internals = internals_url
+            .map(|url| format!("You can leave feedback on the [internals thread]({url})."))
+            .unwrap_or_default();
+        let prefix = if for_blog {
+            format!(
+                r#"---
+layout: post
+title: "{} pre-release testing"
+author: Release automation
+team: The Release Team <https://www.rust-lang.org/governance/teams/release>
+---{}"#,
+                release, "\n\n",
+            )
+        } else {
+            String::new()
+        };
+        Some(format!(
+            "{prefix}The {release} pre-release is ready for testing. The release is scheduled for
+{human_date}. [Release notes can be found here.][relnotes]
+
+You can try it out locally by running:
+
+```plain
+RUSTUP_DIST_SERVER=https://dev-static.rust-lang.org rustup update stable
+```
+
+The index is <https://dev-static.rust-lang.org/dist/{archive_date}/index.html>.
+
+{internals}
+
+The release team is also thinking about changes to our pre-release process:
+we'd love your feedback [on this GitHub issue][feedback].
+
+[relnotes]: {release_notes_url}
+[feedback]: https://github.com/rust-lang/release-team/issues/16
+    "
+        ))
     }
 }
 

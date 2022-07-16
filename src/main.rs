@@ -2,6 +2,8 @@
 
 mod build_manifest;
 mod config;
+mod curl_helper;
+mod discourse;
 mod github;
 mod sign;
 mod smoke_test;
@@ -27,6 +29,8 @@ use xz2::read::XzDecoder;
 use crate::config::{Channel, Config};
 
 const TARGET: &str = env!("TARGET");
+
+const BLOG_PRIMARY_BRANCH: &str = "master";
 
 struct Context {
     work: PathBuf,
@@ -222,6 +226,11 @@ impl Context {
         // Clean up after ourselves to avoid leaving gigabytes of artifacts
         // around.
         let _ = fs::remove_dir_all(&self.dl_dir());
+
+        // This opens a PR and starts an internals thread announcing a
+        // stable dev-release (we distinguish dev by the presence of metadata
+        // which lets us know where to create and what to put in the blog).
+        self.open_blog()?;
 
         // We do this last, since it triggers triagebot posting the GitHub
         // release announcement (and since this is not actually really
@@ -668,6 +677,79 @@ impl Context {
             tagger_name: username,
             tagger_email: email,
         })?;
+
+        Ok(())
+    }
+
+    fn open_blog(&mut self) -> Result<(), Error> {
+        // We rely on the blog variables not being set in production to disable
+        // blogging on the actual release date.
+        if self.config.channel != Channel::Stable {
+            eprintln!("Skipping blogging -- not on stable");
+            return Ok(());
+        }
+
+        let mut github = if let Some(github) = self.config.github() {
+            github
+        } else {
+            eprintln!("Skipping blogging - GitHub credentials not configured");
+            return Ok(());
+        };
+        let mut discourse = if let Some(discourse) = self.config.discourse() {
+            discourse
+        } else {
+            eprintln!("Skipping blogging - Discourse credentials not configured");
+            return Ok(());
+        };
+        let repository_for_blog = if let Some(repo) = &self.config.blog_repository {
+            repo.as_str()
+        } else {
+            eprintln!("Skipping blogging - blog repository not configured");
+            return Ok(());
+        };
+
+        let version = self.current_version.as_ref().expect("has current version");
+        let internals_contents =
+            if let Some(contents) = self.config.blog_contents(version, &self.date, false, None) {
+                contents
+            } else {
+                eprintln!("Skipping internals - insufficient information to create blog post");
+                return Ok(());
+            };
+
+        let announcements_category = 18;
+        let internals_url = discourse.create_topic(
+            announcements_category,
+            &format!("Rust {} pre-release testing", version),
+            &internals_contents,
+        )?;
+        let blog_contents = if let Some(contents) =
+            self.config
+                .blog_contents(version, &self.date, true, Some(&internals_url))
+        {
+            contents
+        } else {
+            eprintln!("Skipping blogging - insufficient information to create blog post");
+            return Ok(());
+        };
+
+        // Create a new branch so that we don't need to worry about the file
+        // already existing. In practice this *could* collide, but after merging
+        // a PR branches should get deleted, so it's very unlikely.
+        let name = format!("automation-{:x}", rand::random::<u32>());
+        let mut token = github.token(repository_for_blog)?;
+        let master_sha = token.get_ref(&format!("heads/{BLOG_PRIMARY_BRANCH}"))?;
+        token.create_ref(&format!("refs/heads/{name}"), &master_sha)?;
+        token.create_file(
+            &name,
+            &format!(
+                "posts/inside-rust/{}-{}-prerelease.md",
+                chrono::Utc::today().format("%Y-%m-%d"),
+                version,
+            ),
+            &blog_contents,
+        )?;
+        token.create_pr(BLOG_PRIMARY_BRANCH, &name, "Pre-release announcement", "")?;
 
         Ok(())
     }

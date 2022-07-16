@@ -1,4 +1,4 @@
-use anyhow::Context;
+use crate::curl_helper::BodyExt;
 use curl::easy::Easy;
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use sha2::Digest;
@@ -138,13 +138,6 @@ impl RepositoryClient<'_> {
             email: &'a str,
         }
 
-        #[derive(serde::Serialize)]
-        struct CreateRefInternal<'a> {
-            #[serde(rename = "ref")]
-            ref_: &'a str,
-            sha: &'a str,
-        }
-
         #[derive(serde::Deserialize)]
         struct CreatedTag {
             sha: String,
@@ -170,6 +163,40 @@ impl RepositoryClient<'_> {
             })
             .send_with_response::<CreatedTag>()?;
 
+        self.create_ref(&format!("refs/tags/{}", tag.tag_name), &created.sha)?;
+
+        Ok(())
+    }
+
+    /// Returns the SHA of the tip of this ref, if it exists.
+    pub(crate) fn get_ref(&mut self, name: &str) -> anyhow::Result<String> {
+        // This mostly exists to make sure the request is successful rather than
+        // really checking the created ref (which we already know).
+        #[derive(serde::Deserialize)]
+        struct Reference {
+            object: Object,
+        }
+        #[derive(serde::Deserialize)]
+        struct Object {
+            sha: String,
+        }
+
+        self.start_new_request()?;
+        self.github.client.get(true)?;
+        self.github.client.url(&format!(
+            "https://api.github.com/repos/{repository}/git/ref/{name}",
+            repository = self.repo,
+        ))?;
+        Ok(self
+            .github
+            .client
+            .without_body()
+            .send_with_response::<Reference>()?
+            .object
+            .sha)
+    }
+
+    pub(crate) fn create_ref(&mut self, name: &str, sha: &str) -> anyhow::Result<()> {
         // This mostly exists to make sure the request is successful rather than
         // really checking the created ref (which we already know).
         #[derive(serde::Deserialize)]
@@ -178,6 +205,13 @@ impl RepositoryClient<'_> {
             #[allow(unused)]
             ref_: String,
         }
+        #[derive(serde::Serialize)]
+        struct CreateRefInternal<'a> {
+            #[serde(rename = "ref")]
+            name: &'a str,
+            sha: &'a str,
+        }
+
         self.start_new_request()?;
         self.github.client.post(true)?;
         self.github.client.url(&format!(
@@ -186,10 +220,7 @@ impl RepositoryClient<'_> {
         ))?;
         self.github
             .client
-            .with_body(CreateRefInternal {
-                ref_: &format!("refs/tags/{}", tag.tag_name),
-                sha: &created.sha,
-            })
+            .with_body(CreateRefInternal { name, sha })
             .send_with_response::<CreatedTagRef>()?;
 
         Ok(())
@@ -215,6 +246,69 @@ impl RepositoryClient<'_> {
 
         Ok(())
     }
+
+    /// Note that this API *will* fail if the file already exists in this
+    /// branch; we don't update existing files.
+    pub(crate) fn create_file(
+        &mut self,
+        branch: &str,
+        path: &str,
+        content: &str,
+    ) -> anyhow::Result<()> {
+        #[derive(serde::Serialize)]
+        struct Request<'a> {
+            message: &'a str,
+            content: &'a str,
+            branch: &'a str,
+        }
+        self.start_new_request()?;
+        self.github.client.put(true)?;
+        self.github.client.url(&format!(
+            "https://api.github.com/repos/{repository}/contents/{path}",
+            repository = self.repo,
+        ))?;
+        self.github
+            .client
+            .with_body(Request {
+                branch,
+                message: "Creating file via promote-release automation",
+                content: &base64::encode(&content),
+            })
+            .send()?;
+        Ok(())
+    }
+
+    pub(crate) fn create_pr(
+        &mut self,
+        base: &str,
+        head: &str,
+        title: &str,
+        body: &str,
+    ) -> anyhow::Result<()> {
+        #[derive(serde::Serialize)]
+        struct Request<'a> {
+            head: &'a str,
+            base: &'a str,
+            title: &'a str,
+            body: &'a str,
+        }
+        self.start_new_request()?;
+        self.github.client.post(true)?;
+        self.github.client.url(&format!(
+            "https://api.github.com/repos/{repository}/pulls",
+            repository = self.repo,
+        ))?;
+        self.github
+            .client
+            .with_body(Request {
+                base,
+                head,
+                title,
+                body,
+            })
+            .send()?;
+        Ok(())
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -224,70 +318,4 @@ pub(crate) struct CreateTag<'a> {
     pub(crate) message: &'a str,
     pub(crate) tagger_name: &'a str,
     pub(crate) tagger_email: &'a str,
-}
-
-trait BodyExt {
-    fn with_body<S>(&mut self, body: S) -> Request<'_, S>;
-    fn without_body(&mut self) -> Request<'_, ()>;
-}
-
-impl BodyExt for Easy {
-    fn with_body<S>(&mut self, body: S) -> Request<'_, S> {
-        Request {
-            body: Some(body),
-            client: self,
-        }
-    }
-    fn without_body(&mut self) -> Request<'_, ()> {
-        Request {
-            body: None,
-            client: self,
-        }
-    }
-}
-
-struct Request<'a, S> {
-    body: Option<S>,
-    client: &'a mut Easy,
-}
-
-impl<S: serde::Serialize> Request<'_, S> {
-    fn send_with_response<T: serde::de::DeserializeOwned>(self) -> anyhow::Result<T> {
-        use std::io::Read;
-        let mut response = Vec::new();
-        let body = self.body.map(|body| serde_json::to_vec(&body).unwrap());
-        {
-            let mut transfer = self.client.transfer();
-            // The unwrap in the read_function is basically guaranteed to not
-            // happen: reading into a slice can't fail. We can't use `?` since the
-            // return type inside transfer isn't compatible with io::Error.
-            if let Some(mut body) = body.as_deref() {
-                transfer.read_function(move |dest| Ok(body.read(dest).unwrap()))?;
-            }
-            transfer.write_function(|new_data| {
-                response.extend_from_slice(new_data);
-                Ok(new_data.len())
-            })?;
-            transfer.perform()?;
-        }
-        serde_json::from_slice(&response)
-            .with_context(|| format!("{}", String::from_utf8_lossy(&response)))
-    }
-
-    fn send(self) -> anyhow::Result<()> {
-        use std::io::Read;
-        let body = self.body.map(|body| serde_json::to_vec(&body).unwrap());
-        {
-            let mut transfer = self.client.transfer();
-            // The unwrap in the read_function is basically guaranteed to not
-            // happen: reading into a slice can't fail. We can't use `?` since the
-            // return type inside transfer isn't compatible with io::Error.
-            if let Some(mut body) = body.as_deref() {
-                transfer.read_function(move |dest| Ok(body.read(dest).unwrap()))?;
-            }
-            transfer.perform()?;
-        }
-
-        Ok(())
-    }
 }
