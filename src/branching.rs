@@ -15,7 +15,8 @@ impl Context {
             return Ok(());
         };
         let mut token = github.token("rust-lang/rust")?;
-        let prebump_sha = token.last_commit_for_file("src/version")?;
+        let bump_commit = token.last_commit_for_file("src/version")?;
+        let prebump_sha = bump_commit.parents[0].sha.clone();
         let beta_sha = token.get_ref("heads/beta")?;
 
         let stable_version = token.read_file(Some("stable"), "src/version")?;
