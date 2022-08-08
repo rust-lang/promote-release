@@ -344,11 +344,7 @@ impl RepositoryClient<'_> {
 
     /// Returns the last commit (SHA) on a repository's default branch which changed
     /// the passed path.
-    pub(crate) fn last_commit_for_file(&mut self, path: &str) -> anyhow::Result<String> {
-        #[derive(serde::Deserialize)]
-        struct CommitData {
-            sha: String,
-        }
+    pub(crate) fn last_commit_for_file(&mut self, path: &str) -> anyhow::Result<CommitData> {
         self.start_new_request()?;
         self.github.client.get(true)?;
         self.github.client.url(&format!(
@@ -363,7 +359,7 @@ impl RepositoryClient<'_> {
         if commits.is_empty() {
             anyhow::bail!("No commits for path {:?}", path);
         }
-        Ok(commits.remove(0).sha)
+        Ok(commits.remove(0))
     }
 
     /// Returns the contents of the file
@@ -415,4 +411,16 @@ pub(crate) struct CreateTag<'a> {
     pub(crate) message: &'a str,
     pub(crate) tagger_name: &'a str,
     pub(crate) tagger_email: &'a str,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct CommitData {
+    #[allow(unused)]
+    pub(crate) sha: String,
+    pub(crate) parents: Vec<CommitParent>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct CommitParent {
+    pub(crate) sha: String,
 }
