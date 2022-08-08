@@ -65,7 +65,7 @@ impl Context {
         let mut github = self.config.github().unwrap();
         let mut token = github.token("rust-lang/cargo")?;
         let new_beta = future_beta_version.content()?.trim().to_owned();
-        token.create_ref(&dbg!(format!("heads/rust-{}", new_beta)), &cargo_sha)?;
+        token.create_ref(&format!("refs/heads/rust-{}", new_beta), &cargo_sha)?;
 
         Ok(())
     }
