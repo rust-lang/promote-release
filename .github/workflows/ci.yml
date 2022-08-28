@@ -86,6 +86,8 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
 
     needs: [test, local, docker]
     if: github.event_name == 'push' && github.repository == 'rust-lang/promote-release' && github.ref == 'refs/heads/master'
@@ -99,11 +101,23 @@ jobs:
       - name: Import the Docker image previously built
         run: cat promote-release.tar.zstd | zstd -d | docker load
 
-      - name: Upload the Docker image to AWS ECR
-        uses: rust-lang/simpleinfra/github-actions/upload-docker-image@master
+      - name: Configure AWS credentials
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: aws-actions/configure-aws-credentials@v1
         with:
-          image: promote-release
-          repository: promote-release
-          region: us-west-1
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::890664054962:role/ci--rust-lang-promote-release
+          aws-region: us-west-1
+
+      - name: Login to Amazon ECR Private
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Tag and push docker image to Amazon ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: promote-release
+        run: |
+          docker tag promote-release $REGISTRY/$REPOSITORY:latest
+          docker push $REGISTRY/$REPOSITORY:latest
