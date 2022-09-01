@@ -11,7 +11,7 @@ pub(crate) struct Github {
 }
 
 pub(crate) struct RepositoryClient<'a> {
-    github: &'a mut Github,
+    client: &'a mut Easy,
     repo: String,
     token: String,
 }
@@ -103,7 +103,7 @@ impl Github {
             .send_with_response::<TokenResponse>()?
             .token;
         Ok(RepositoryClient {
-            github: self,
+            client: &mut self.client,
             repo: repository.to_owned(),
             token,
         })
@@ -111,12 +111,25 @@ impl Github {
 }
 
 impl RepositoryClient<'_> {
+    #[cfg(test)]
+    pub(crate) fn from_pat<'a>(
+        client: &'a mut Easy,
+        token: &str,
+        repository: &str,
+    ) -> RepositoryClient<'a> {
+        RepositoryClient {
+            client,
+            token: token.to_owned(),
+            repo: repository.to_owned(),
+        }
+    }
+
     fn start_new_request(&mut self) -> anyhow::Result<()> {
-        self.github.client.reset();
-        self.github.client.useragent("rust-lang/promote-release")?;
+        self.client.reset();
+        self.client.useragent("rust-lang/promote-release")?;
         let mut headers = curl::easy::List::new();
         headers.append(&format!("Authorization: token {}", self.token))?;
-        self.github.client.http_headers(headers)?;
+        self.client.http_headers(headers)?;
         Ok(())
     }
 
@@ -143,13 +156,12 @@ impl RepositoryClient<'_> {
             sha: String,
         }
         self.start_new_request()?;
-        self.github.client.post(true)?;
-        self.github.client.url(&format!(
+        self.client.post(true)?;
+        self.client.url(&format!(
             "https://api.github.com/repos/{repository}/git/tags",
             repository = self.repo,
         ))?;
         let created = self
-            .github
             .client
             .with_body(CreateTagInternal {
                 tag: tag.tag_name,
@@ -182,13 +194,12 @@ impl RepositoryClient<'_> {
         }
 
         self.start_new_request()?;
-        self.github.client.get(true)?;
-        self.github.client.url(&format!(
+        self.client.get(true)?;
+        self.client.url(&format!(
             "https://api.github.com/repos/{repository}/git/ref/{name}",
             repository = self.repo,
         ))?;
         Ok(self
-            .github
             .client
             .without_body()
             .send_with_response::<Reference>()?
@@ -213,13 +224,12 @@ impl RepositoryClient<'_> {
         }
 
         self.start_new_request()?;
-        self.github.client.post(true)?;
-        self.github.client.url(&format!(
+        self.client.post(true)?;
+        self.client.url(&format!(
             "https://api.github.com/repos/{repository}/git/refs",
             repository = self.repo,
         ))?;
-        self.github
-            .client
+        self.client
             .with_body(CreateRefInternal { name, sha })
             .send_with_response::<CreatedTagRef>()?;
 
@@ -243,15 +253,14 @@ impl RepositoryClient<'_> {
 
         self.start_new_request()?;
         // We want curl to read the request body, so configure POST.
-        self.github.client.post(true)?;
+        self.client.post(true)?;
         // However, the actual request should be a PATCH request.
-        self.github.client.custom_request("PATCH")?;
-        self.github.client.url(&format!(
+        self.client.custom_request("PATCH")?;
+        self.client.url(&format!(
             "https://api.github.com/repos/{repository}/git/refs/{name}",
             repository = self.repo,
         ))?;
-        self.github
-            .client
+        self.client
             .with_body(UpdateRefInternal { sha, force })
             .send_with_response::<CreatedRef>()?;
 
@@ -265,16 +274,13 @@ impl RepositoryClient<'_> {
             ref_: &'a str,
         }
         self.start_new_request()?;
-        self.github.client.post(true)?;
-        self.github.client.url(&format!(
+        self.client.post(true)?;
+        self.client.url(&format!(
             "https://api.github.com/repos/{repository}/actions/workflows/{workflow}/dispatches",
             repository = self.repo,
         ))?;
 
-        self.github
-            .client
-            .with_body(Request { ref_: branch })
-            .send()?;
+        self.client.with_body(Request { ref_: branch }).send()?;
 
         Ok(())
     }
@@ -294,13 +300,12 @@ impl RepositoryClient<'_> {
             branch: &'a str,
         }
         self.start_new_request()?;
-        self.github.client.put(true)?;
-        self.github.client.url(&format!(
+        self.client.put(true)?;
+        self.client.url(&format!(
             "https://api.github.com/repos/{repository}/contents/{path}",
             repository = self.repo,
         ))?;
-        self.github
-            .client
+        self.client
             .with_body(Request {
                 branch,
                 message: "Creating file via promote-release automation",
@@ -325,13 +330,12 @@ impl RepositoryClient<'_> {
             body: &'a str,
         }
         self.start_new_request()?;
-        self.github.client.post(true)?;
-        self.github.client.url(&format!(
+        self.client.post(true)?;
+        self.client.url(&format!(
             "https://api.github.com/repos/{repository}/pulls",
             repository = self.repo,
         ))?;
-        self.github
-            .client
+        self.client
             .with_body(Request {
                 base,
                 head,
@@ -344,15 +348,18 @@ impl RepositoryClient<'_> {
 
     /// Returns the last commit (SHA) on a repository's default branch which changed
     /// the passed path.
-    pub(crate) fn last_commit_for_file(&mut self, path: &str) -> anyhow::Result<CommitData> {
+    pub(crate) fn last_commit_for_file(
+        &mut self,
+        start: &str,
+        path: &str,
+    ) -> anyhow::Result<CommitData> {
         self.start_new_request()?;
-        self.github.client.get(true)?;
-        self.github.client.url(&format!(
-            "https://api.github.com/repos/{repo}/commits?path={path}",
+        self.client.get(true)?;
+        self.client.url(&format!(
+            "https://api.github.com/repos/{repo}/commits?path={path}&start={start}",
             repo = self.repo
         ))?;
         let mut commits = self
-            .github
             .client
             .without_body()
             .send_with_response::<Vec<CommitData>>()?;
@@ -362,19 +369,63 @@ impl RepositoryClient<'_> {
         Ok(commits.remove(0))
     }
 
+    /// Search from `start` to find the commit which merged in `merged` to itself (i.e., has a
+    /// parent commit containing `merged` and has more than one parent).
+    ///
+    /// We also assume that the merge commit will have an author of `bors`, which lets us iterate
+    /// much less than would otherwise typically be necessary.
+    pub(crate) fn find_merge_commit(
+        &mut self,
+        start: &str,
+        merged: &str,
+    ) -> anyhow::Result<CommitData> {
+        // We limit ourselves to 50 pages currently to avoid spending too much time on this.
+        self.start_new_request()?;
+        self.client.get(true)?;
+        self.client.url(&format!(
+            "https://api.github.com/repos/{repo}/commits/{start}",
+            repo = self.repo
+        ))?;
+        let resolved_start = self
+            .client
+            .without_body()
+            .send_with_response::<CommitData>()?
+            .sha;
+        for page in 1..20 {
+            self.start_new_request()?;
+            self.client.get(true)?;
+            self.client.url(&format!(
+                "https://api.github.com/repos/{repo}/commits?start={resolved_start}&per_page=100&page={page}&author=bors",
+                repo = self.repo
+            ))?;
+            let commits = self
+                .client
+                .without_body()
+                .send_with_response::<Vec<CommitData>>()?;
+            for commit in commits {
+                if commit.parents.iter().any(|p| p.sha == merged) {
+                    return Ok(commit);
+                }
+            }
+        }
+
+        anyhow::bail!(
+            "Failed to find merged={} in start={} ancestors (scanned 2000 commits)",
+            merged,
+            start
+        );
+    }
+
     /// Returns the contents of the file
     pub(crate) fn read_file(&mut self, sha: Option<&str>, path: &str) -> anyhow::Result<GitFile> {
         self.start_new_request()?;
-        self.github.client.get(true)?;
-        self.github.client.url(&format!(
+        self.client.get(true)?;
+        self.client.url(&format!(
             "https://api.github.com/repos/{repo}/contents/{path}{maybe_ref}",
             repo = self.repo,
             maybe_ref = sha.map(|s| format!("?ref={}", s)).unwrap_or_default()
         ))?;
-        self.github
-            .client
-            .without_body()
-            .send_with_response::<GitFile>()
+        self.client.without_body().send_with_response::<GitFile>()
     }
 }
 
@@ -415,7 +466,6 @@ pub(crate) struct CreateTag<'a> {
 
 #[derive(serde::Deserialize)]
 pub(crate) struct CommitData {
-    #[allow(unused)]
     pub(crate) sha: String,
     pub(crate) parents: Vec<CommitParent>,
 }

@@ -1,4 +1,7 @@
-use crate::Context;
+use crate::{
+    github::{CommitData, RepositoryClient},
+    Context,
+};
 
 impl Context {
     /// Let $stable, $beta, $master be the tips of each branch (when starting).
@@ -15,7 +18,7 @@ impl Context {
             return Ok(());
         };
         let mut token = github.token("rust-lang/rust")?;
-        let bump_commit = token.last_commit_for_file("src/version")?;
+        let bump_commit = branchpoint(&mut token, "master")?;
         let prebump_sha = bump_commit.parents[0].sha.clone();
         let beta_sha = token.get_ref("heads/beta")?;
 
@@ -70,4 +73,26 @@ impl Context {
 
         Ok(())
     }
+}
+
+fn branchpoint(client: &mut RepositoryClient<'_>, start: &str) -> anyhow::Result<CommitData> {
+    let file_commit = client.last_commit_for_file(start, "src/version")?;
+    client.find_merge_commit(start, &file_commit.sha)
+}
+
+#[test]
+fn check_branchpoint() {
+    let token = if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+        token
+    } else {
+        eprintln!("Skipping test -- GITHUB_TOKEN not configured in environment");
+        return;
+    };
+    let master_pinned = "4f9898a7947059433d08357cdaaba84c4705873d";
+    let mut client = curl::easy::Easy::new();
+    let mut client = RepositoryClient::from_pat(&mut client, token.trim(), "rust-lang/rust");
+    assert_eq!(
+        branchpoint(&mut client, master_pinned).unwrap().sha,
+        "bb71929892c4e7200d66b3efba9febead7056891"
+    );
 }

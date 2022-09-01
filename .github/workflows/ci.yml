@@ -25,7 +25,9 @@ jobs:
         run: cargo clippy -- -Dwarnings
 
       - name: Ensure tests are passing
-        run: cargo test
+        run: cargo test -- --nocapture
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   local:
     name: Local release
