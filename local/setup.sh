@@ -37,7 +37,7 @@ for bucket in "${MINIO_BUCKETS[@]}"; do
         mc mb "local/${bucket}" >/dev/null
     fi
     echo "making the ${bucket} minio bucket public"
-    mc policy set download "local/${bucket}" >/dev/null
+    mc anonymous set download "local/${bucket}" >/dev/null
 done
 
 # Generate the GPG key to sign binaries
