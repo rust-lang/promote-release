@@ -346,40 +346,12 @@ impl RepositoryClient<'_> {
         Ok(())
     }
 
-    /// Returns the last commit (SHA) on a repository's default branch which changed
-    /// the passed path.
-    pub(crate) fn last_commit_for_file(
+    /// Returns the last bors merge commit (SHA) which involved changes to the passed file path.
+    pub(crate) fn merge_commit_for_file(
         &mut self,
         start: &str,
         path: &str,
-    ) -> anyhow::Result<CommitData> {
-        self.start_new_request()?;
-        self.client.get(true)?;
-        self.client.url(&format!(
-            "https://api.github.com/repos/{repo}/commits?path={path}&start={start}",
-            repo = self.repo
-        ))?;
-        let mut commits = self
-            .client
-            .without_body()
-            .send_with_response::<Vec<CommitData>>()?;
-        if commits.is_empty() {
-            anyhow::bail!("No commits for path {:?}", path);
-        }
-        Ok(commits.remove(0))
-    }
-
-    /// Search from `start` to find the commit which merged in `merged` to itself (i.e., has a
-    /// parent commit containing `merged` and has more than one parent).
-    ///
-    /// We also assume that the merge commit will have an author of `bors`, which lets us iterate
-    /// much less than would otherwise typically be necessary.
-    pub(crate) fn find_merge_commit(
-        &mut self,
-        start: &str,
-        merged: &str,
-    ) -> anyhow::Result<CommitData> {
-        // We limit ourselves to 50 pages currently to avoid spending too much time on this.
+    ) -> anyhow::Result<FullCommitData> {
         self.start_new_request()?;
         self.client.get(true)?;
         self.client.url(&format!(
@@ -395,7 +367,7 @@ impl RepositoryClient<'_> {
             self.start_new_request()?;
             self.client.get(true)?;
             self.client.url(&format!(
-                "https://api.github.com/repos/{repo}/commits?start={resolved_start}&per_page=100&page={page}&author=bors",
+                "https://api.github.com/repos/{repo}/commits?sha={resolved_start}&per_page=100&page={page}&author=bors",
                 repo = self.repo
             ))?;
             let commits = self
@@ -403,16 +375,28 @@ impl RepositoryClient<'_> {
                 .without_body()
                 .send_with_response::<Vec<CommitData>>()?;
             for commit in commits {
-                if commit.parents.iter().any(|p| p.sha == merged) {
+                self.start_new_request()?;
+                self.client.get(true)?;
+                self.client.url(&format!(
+                    "https://api.github.com/repos/{repo}/commits/{sha}",
+                    repo = self.repo,
+                    sha = commit.sha,
+                ))?;
+                let commit = self
+                    .client
+                    .without_body()
+                    .send_with_response::<FullCommitData>()?;
+                if commit.files.iter().any(|f| f.filename == path) {
                     return Ok(commit);
                 }
             }
         }
 
         anyhow::bail!(
-            "Failed to find merged={} in start={} ancestors (scanned 2000 commits)",
-            merged,
-            start
+            "Failed to find bors commit touching {:?} in start={} ancestors (scanned {} commits)",
+            path,
+            start,
+            20 * 100,
         );
     }
 
@@ -465,9 +449,21 @@ pub(crate) struct CreateTag<'a> {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct CommitData {
+pub(crate) struct FullCommitData {
+    #[allow(unused)]
     pub(crate) sha: String,
     pub(crate) parents: Vec<CommitParent>,
+    pub(crate) files: Vec<CommitFile>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct CommitData {
+    pub(crate) sha: String,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct CommitFile {
+    filename: String,
 }
 
 #[derive(serde::Deserialize)]
