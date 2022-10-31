@@ -1,5 +1,5 @@
 use crate::{
-    github::{CommitData, RepositoryClient},
+    github::{FullCommitData, RepositoryClient},
     Context,
 };
 
@@ -75,9 +75,8 @@ impl Context {
     }
 }
 
-fn branchpoint(client: &mut RepositoryClient<'_>, start: &str) -> anyhow::Result<CommitData> {
-    let file_commit = client.last_commit_for_file(start, "src/version")?;
-    client.find_merge_commit(start, &file_commit.sha)
+fn branchpoint(client: &mut RepositoryClient<'_>, start: &str) -> anyhow::Result<FullCommitData> {
+    client.merge_commit_for_file(start, "src/version")
 }
 
 #[test]
