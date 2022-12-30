@@ -7,7 +7,7 @@
 # then copy the binary from it later in the build.
 FROM quay.io/minio/mc:RELEASE.2022-10-22T03-39-29Z AS mc
 
-FROM ubuntu:focal
+FROM ubuntu:22.04
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     awscli \
