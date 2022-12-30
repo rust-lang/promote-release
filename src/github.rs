@@ -48,7 +48,7 @@ impl Github {
                 &sha2::Sha256::new()
                     .chain_update(format!(
                         "{}.{}",
-                        base64::encode_config(&header, encoding),
+                        base64::encode_config(header, encoding),
                         base64::encode_config(&payload, encoding),
                     ))
                     .finalize(),
@@ -56,9 +56,9 @@ impl Github {
             .unwrap();
         format!(
             "{}.{}.{}",
-            base64::encode_config(&header, encoding),
+            base64::encode_config(header, encoding),
             base64::encode_config(&payload, encoding),
-            base64::encode_config(&signature, encoding),
+            base64::encode_config(signature, encoding),
         )
     }
 
@@ -309,7 +309,7 @@ impl RepositoryClient<'_> {
             .with_body(Request {
                 branch,
                 message: "Creating file via promote-release automation",
-                content: &base64::encode(&content),
+                content: &base64::encode(content),
             })
             .send()?;
         Ok(())
@@ -432,7 +432,7 @@ impl GitFile {
     pub(crate) fn content(&self) -> anyhow::Result<String> {
         if let GitFile::File { encoding, content } = self {
             assert_eq!(encoding, "base64");
-            Ok(String::from_utf8(base64::decode(&content.trim())?)?)
+            Ok(String::from_utf8(base64::decode(content.trim())?)?)
         } else {
             panic!("content() on {:?}", self);
         }

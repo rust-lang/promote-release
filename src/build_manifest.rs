@@ -42,9 +42,9 @@ impl<'a> BuildManifest<'a> {
 
         // Ensure the manifest dir exists but is empty.
         if dest.is_dir() {
-            std::fs::remove_dir_all(&dest)?;
+            std::fs::remove_dir_all(dest)?;
         }
-        std::fs::create_dir_all(&dest)?;
+        std::fs::create_dir_all(dest)?;
 
         // Ensure the shipped files path does not exists
         if self.shipped_files_path.is_file() {
