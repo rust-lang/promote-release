@@ -155,6 +155,13 @@ pub(crate) struct Config {
     /// Should be a org/repo code, e.g., rust-lang/blog.rust-lang.org.
     pub(crate) blog_repository: Option<String>,
 
+    /// This is the PR on the blog repository we should merge (using GitHub PR merge) after
+    /// finishing this release.
+    ///
+    /// This is currently used for stable releases but in principle could be used for arbitrary
+    /// releases.
+    pub(crate) blog_pr: Option<u32>,
+
     /// The expected release date, for the blog post announcing dev-static
     /// releases. Expected to be in YYYY-MM-DD format.
     ///
@@ -208,6 +215,7 @@ impl Config {
             wip_recompress: bool_env("WIP_RECOMPRESS")?,
             rustc_tag_repository: maybe_env("RUSTC_TAG_REPOSITORY")?,
             blog_repository: maybe_env("BLOG_REPOSITORY")?,
+            blog_pr: maybe_env("BLOG_MERGE_PR")?,
             scheduled_release_date: maybe_env("BLOG_SCHEDULED_RELEASE_DATE")?,
             discourse_api_user: maybe_env("DISCOURSE_API_USER")?,
             discourse_api_key: maybe_env("DISCOURSE_API_KEY")?,
@@ -235,7 +243,7 @@ impl Config {
         }
     }
 
-    pub(crate) fn blog_contents(
+    pub(crate) fn stable_dev_static_blog_contents(
         &self,
         release: &str,
         archive_date: &str,
