@@ -738,7 +738,7 @@ impl Context {
 
         let mut token = github.token(repository_for_blog)?;
         token.create_file(
-            &BLOG_PRIMARY_BRANCH,
+            BLOG_PRIMARY_BRANCH,
             &format!(
                 "posts/inside-rust/{}-{}-prerelease.md",
                 chrono::Utc::today().format("%Y-%m-%d"),
