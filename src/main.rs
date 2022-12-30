@@ -736,15 +736,9 @@ impl Context {
             return Ok(());
         };
 
-        // Create a new branch so that we don't need to worry about the file
-        // already existing. In practice this *could* collide, but after merging
-        // a PR branches should get deleted, so it's very unlikely.
-        let name = format!("automation-{:x}", rand::random::<u32>());
         let mut token = github.token(repository_for_blog)?;
-        let master_sha = token.get_ref(&format!("heads/{BLOG_PRIMARY_BRANCH}"))?;
-        token.create_ref(&format!("refs/heads/{name}"), &master_sha)?;
         token.create_file(
-            &name,
+            &BLOG_PRIMARY_BRANCH,
             &format!(
                 "posts/inside-rust/{}-{}-prerelease.md",
                 chrono::Utc::today().format("%Y-%m-%d"),
@@ -752,7 +746,6 @@ impl Context {
             ),
             &blog_contents,
         )?;
-        token.create_pr(BLOG_PRIMARY_BRANCH, &name, "Pre-release announcement", "")?;
 
         Ok(())
     }

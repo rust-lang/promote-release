@@ -315,6 +315,8 @@ impl RepositoryClient<'_> {
         Ok(())
     }
 
+    // This isn't currently used but might be again in the future, for now just leave it in place.
+    #[allow(unused)]
     pub(crate) fn create_pr(
         &mut self,
         base: &str,
