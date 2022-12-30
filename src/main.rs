@@ -213,7 +213,7 @@ impl Context {
         smoke_test.test(&self.config.channel)?;
 
         // Merge the generated manifests with the downloaded artifacts.
-        for entry in std::fs::read_dir(&self.real_manifest_dir())? {
+        for entry in std::fs::read_dir(self.real_manifest_dir())? {
             let entry = entry?;
             if entry.file_type()?.is_file() {
                 std::fs::rename(entry.path(), self.dl_dir().join(entry.file_name()))?;
@@ -228,7 +228,7 @@ impl Context {
 
         // Clean up after ourselves to avoid leaving gigabytes of artifacts
         // around.
-        let _ = fs::remove_dir_all(&self.dl_dir());
+        let _ = fs::remove_dir_all(self.dl_dir());
 
         // This opens a PR and starts an internals thread announcing a
         // stable dev-release (we distinguish dev by the presence of metadata
@@ -259,7 +259,7 @@ impl Context {
             }
             println!("looking inside {} for a version", filename);
 
-            let file = File::open(&e.path())?;
+            let file = File::open(e.path())?;
             let reader = flate2::read::GzDecoder::new(file);
             let mut archive = tar::Archive::new(reader);
 
