@@ -248,7 +248,7 @@ impl Config {
             release.replace('.', ""),
             scheduled_release_date.format("%Y-%m-%d"),
         );
-        let human_date = scheduled_release_date.format("%B %d");
+        let human_date = scheduled_release_date.format("%B %-d");
         let internals = internals_url
             .map(|url| format!("You can leave feedback on the [internals thread]({url})."))
             .unwrap_or_default();
