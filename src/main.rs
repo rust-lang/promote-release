@@ -13,7 +13,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{collections::HashSet, env};
 
 use crate::build_manifest::BuildManifest;
@@ -230,10 +230,9 @@ impl Context {
         // around.
         let _ = fs::remove_dir_all(self.dl_dir());
 
-        // This opens a PR and starts an internals thread announcing a
-        // stable dev-release (we distinguish dev by the presence of metadata
-        // which lets us know where to create and what to put in the blog).
-        self.open_blog()?;
+        // This takes care of announcing stable releases (whether dev-static or not) on the blog
+        // and internals.
+        self.blog_and_discourse()?;
 
         // We do this last, since it triggers triagebot posting the GitHub
         // release announcement (and since this is not actually really
@@ -684,9 +683,7 @@ impl Context {
         Ok(())
     }
 
-    fn open_blog(&mut self) -> Result<(), Error> {
-        // We rely on the blog variables not being set in production to disable
-        // blogging on the actual release date.
+    fn blog_and_discourse(&mut self) -> Result<(), Error> {
         if self.config.channel != Channel::Stable {
             eprintln!("Skipping blogging -- not on stable");
             return Ok(());
@@ -711,41 +708,87 @@ impl Context {
             return Ok(());
         };
 
-        let version = self.current_version.as_ref().expect("has current version");
-        let internals_contents =
-            if let Some(contents) = self.config.blog_contents(version, &self.date, false, None) {
+        if self.config.scheduled_release_date.is_some() {
+            // If the release is scheduled for some date, then we treat it as dev-static stable and
+            // call the relevant functions...
+            let version = self.current_version.as_ref().expect("has current version");
+            let internals_contents = if let Some(contents) = self
+                .config
+                .stable_dev_static_blog_contents(version, &self.date, false, None)
+            {
                 contents
             } else {
                 eprintln!("Skipping internals - insufficient information to create blog post");
                 return Ok(());
             };
 
-        let announcements_category = 18;
-        let internals_url = discourse.create_topic(
-            announcements_category,
-            &format!("Rust {} pre-release testing", version),
-            &internals_contents,
-        )?;
-        let blog_contents = if let Some(contents) =
-            self.config
-                .blog_contents(version, &self.date, true, Some(&internals_url))
-        {
-            contents
-        } else {
-            eprintln!("Skipping blogging - insufficient information to create blog post");
-            return Ok(());
-        };
-
-        let mut token = github.token(repository_for_blog)?;
-        token.create_file(
-            BLOG_PRIMARY_BRANCH,
-            &format!(
-                "posts/inside-rust/{}-{}-prerelease.md",
-                chrono::Utc::today().format("%Y-%m-%d"),
+            let announcements_category = 18;
+            let internals_url = discourse.create_topic(
+                announcements_category,
+                &format!("Rust {} pre-release testing", version),
+                &internals_contents,
+            )?;
+            let blog_contents = if let Some(contents) = self.config.stable_dev_static_blog_contents(
                 version,
-            ),
-            &blog_contents,
-        )?;
+                &self.date,
+                true,
+                Some(&internals_url),
+            ) {
+                contents
+            } else {
+                eprintln!("Skipping blogging - insufficient information to create blog post");
+                return Ok(());
+            };
+
+            let mut token = github.token(repository_for_blog)?;
+            token.create_file(
+                BLOG_PRIMARY_BRANCH,
+                &format!(
+                    "posts/inside-rust/{}-{}-prerelease.md",
+                    chrono::Utc::today().format("%Y-%m-%d"),
+                    version,
+                ),
+                &blog_contents,
+            )?;
+        } else if let Some(pr) = self.config.blog_pr {
+            let mut token = github.token(repository_for_blog)?;
+
+            let before_merge = token.latest_github_pages()?;
+
+            // Otherwise, if we're passed a blog PR number, then we will try to merge that PR.
+            //
+            // We also post to Discourse with a release announcement once the PR is merged.
+            let version = self.current_version.as_ref().expect("has current version");
+            if let Err(e) = token.merge_pr(pr) {
+                eprintln!("Failed to merge PR: {:?}", e);
+                return Ok(());
+            }
+
+            // Wait for a new deployment of the PR.
+            loop {
+                let now = token.latest_github_pages()?;
+                // If no such build exists, then we also need to wait -- we only provide complete
+                // builds here.
+                if now.is_none() || before_merge == now {
+                    println!("Waiting for GitHub pages deployment of blog (latest: {now:?})");
+                    // Wait for a new deployment after merging the blog.
+                    std::thread::sleep(Duration::from_secs(33));
+                } else {
+                    break;
+                }
+            }
+
+            // users.rust-lang.org has announcements as the 6th category:
+            //
+            // https://users.rust-lang.org/c/announcements/6
+            let announcements_category = 6;
+            let date = chrono::Utc::today().format("%Y/%m/%d");
+            discourse.create_topic(
+                announcements_category,
+                &format!("Rust {version}"),
+                &format!("https://blog.rust-lang.org/{date}/Rust-{version}.html"),
+            )?;
+        }
 
         Ok(())
     }

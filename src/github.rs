@@ -413,6 +413,64 @@ impl RepositoryClient<'_> {
         ))?;
         self.client.without_body().send_with_response::<GitFile>()
     }
+
+    pub(crate) fn merge_pr(&mut self, pr: u32) -> anyhow::Result<()> {
+        self.start_new_request()?;
+        self.client.put(true)?;
+        self.client.url(&format!(
+            "https://api.github.com/repos/{repo}/pulls/{pr}/merge",
+            repo = self.repo,
+        ))?;
+
+        #[derive(Default, Debug, serde::Deserialize)]
+        // Fields are intentionally used for Debug.
+        #[allow(dead_code)]
+        #[serde(default)]
+        struct MergePrResponse {
+            sha: String,
+            merged: bool,
+            message: String,
+        }
+
+        let resp = self
+            .client
+            .without_body()
+            .send_with_response::<MergePrResponse>()?;
+        if resp.merged {
+            Ok(())
+        } else {
+            anyhow::bail!("Failed to merge {} PR #{}: {:?}", self.repo, pr, resp);
+        }
+    }
+
+    /// Retrieve the last github pages deployed SHA
+    ///
+    /// Returns None if the latest build is not fully built.
+    pub(crate) fn latest_github_pages(&mut self) -> anyhow::Result<Option<String>> {
+        self.start_new_request()?;
+        self.client.get(true)?;
+        self.client.url(&format!(
+            "https://api.github.com/repos/{repo}/pages/builds/latest",
+            repo = self.repo,
+        ))?;
+
+        #[derive(serde::Deserialize)]
+        struct Deployment {
+            status: String,
+            commit: String,
+        }
+
+        let resp = self
+            .client
+            .without_body()
+            .send_with_response::<Deployment>()?;
+
+        if resp.status != "built" {
+            return Ok(None);
+        }
+
+        Ok(Some(resp.commit))
+    }
 }
 
 #[derive(Debug, serde::Deserialize)]
