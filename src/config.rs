@@ -125,8 +125,12 @@ pub(crate) struct Config {
     /// * Preventing multiple releases on stable and beta of the same version number.
     pub(crate) bypass_startup_checks: bool,
 
-    /// Whether to force the recompression of .gz files into .xz.
-    pub(crate) wip_recompress: bool,
+    /// Whether to force the recompression from input tarballs into .gz compressed tarballs.
+    ///
+    /// This is on by default if .gz tarballs aren't available in the input.
+    pub(crate) recompress_gz: bool,
+    /// Whether to force the recompression from input tarballs into highly compressed .xz tarballs.
+    pub(crate) recompress_xz: bool,
 
     /// The compression level to use when recompressing tarballs with gzip.
     pub(crate) gzip_compression_level: u32,
@@ -212,7 +216,8 @@ impl Config {
             upload_bucket: require_env("UPLOAD_BUCKET")?,
             storage_class: default_env("UPLOAD_STORAGE_CLASS", "INTELLIGENT_TIERING".into())?,
             upload_dir: require_env("UPLOAD_DIR")?,
-            wip_recompress: bool_env("WIP_RECOMPRESS")?,
+            recompress_xz: bool_env("RECOMPRESS_XZ")?,
+            recompress_gz: bool_env("RECOMPRESS_GZ")?,
             rustc_tag_repository: maybe_env("RUSTC_TAG_REPOSITORY")?,
             blog_repository: maybe_env("BLOG_REPOSITORY")?,
             blog_pr: maybe_env("BLOG_MERGE_PR")?,
