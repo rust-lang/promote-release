@@ -118,6 +118,8 @@ export PROMOTE_RELEASE_UPLOAD_ADDR="http://localhost:9000/static"
 export PROMOTE_RELEASE_UPLOAD_BUCKET="static"
 export PROMOTE_RELEASE_UPLOAD_STORAGE_CLASS="STANDARD"
 export PROMOTE_RELEASE_UPLOAD_DIR="dist"
+# Enable xz recompression to check it in CI
+export PROMOTE_RELEASE_RECOMPRESS_XZ=1
 # Environment variables used only by local releases
 export PROMOTE_RELEASE_BYPASS_STARTUP_CHECKS="1"
 export PROMOTE_RELEASE_GZIP_COMPRESSION_LEVEL="1" # Faster recompressions
