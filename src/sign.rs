@@ -2,8 +2,8 @@ use anyhow::Error;
 use chrono::Utc;
 use pgp::{
     armor::BlockType,
-    crypto::HashAlgorithm,
-    packet::{Packet, SignatureConfig, SignatureType, SignatureVersion, Subpacket},
+    crypto::hash::HashAlgorithm,
+    packet::{self, Packet, SignatureConfig, SignatureType, SignatureVersion},
     types::{KeyTrait, SecretKeyTrait},
     Deserializable, SignedSecretKey,
 };
@@ -130,8 +130,8 @@ impl Signer {
             issuer: Some(pubkey.key_id()),
             created: Some(now),
             hashed_subpackets: vec![
-                Subpacket::SignatureCreationTime(now),
-                Subpacket::Issuer(pubkey.key_id()),
+                packet::Subpacket::regular(packet::SubpacketData::SignatureCreationTime(now)),
+                packet::Subpacket::regular(packet::SubpacketData::Issuer(pubkey.key_id())),
             ],
             unhashed_subpackets: Vec::new(),
         };
@@ -185,13 +185,15 @@ impl Signer {
             issuer: Some(pubkey.key_id()),
             created: Some(now),
             hashed_subpackets: vec![
-                Subpacket::IssuerFingerprint(
+                packet::Subpacket::regular(packet::SubpacketData::IssuerFingerprint(
                     pgp::types::KeyVersion::V4,
                     self.gpg_key.public_key().fingerprint().into(),
-                ),
-                Subpacket::SignatureCreationTime(now),
+                )),
+                packet::Subpacket::regular(packet::SubpacketData::SignatureCreationTime(now)),
             ],
-            unhashed_subpackets: vec![Subpacket::Issuer(pubkey.key_id())],
+            unhashed_subpackets: vec![packet::Subpacket::regular(packet::SubpacketData::Issuer(
+                pubkey.key_id(),
+            ))],
         };
 
         let mut dest = Vec::new();
