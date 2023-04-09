@@ -29,5 +29,9 @@ ENV PATH=/root/.cargo/bin:$PATH
 COPY --from=mc /usr/bin/mc /usr/local/bin/mc
 RUN chmod 0755 /usr/local/bin/mc
 
+# The default is 20 but slightly bumping it here. Mostly to test that this
+# command works. In production we set a much higher value (150).
+RUN aws configure set default.s3.max_concurrent_requests 25
+
 ENTRYPOINT ["/src/local/setup.sh"]
 CMD ["/src/local/idle.sh"]
