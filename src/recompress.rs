@@ -13,7 +13,7 @@
 use crate::Context;
 use rayon::prelude::*;
 use std::fs::{self, File};
-use std::io;
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::time::Instant;
 use xz2::read::XzDecoder;
@@ -42,12 +42,15 @@ impl Context {
                 println!("recompressing {}...", xz_path.display());
                 let gz_path = xz_path.with_extension("gz");
 
+                let mut destinations: Vec<Box<dyn io::Write>> = Vec::new();
+
                 // Produce gzip if explicitly enabled or the destination file doesn't exist.
                 if recompress_gz || !gz_path.is_file() {
-                    let mut xz_orig = XzDecoder::new(File::open(xz_path)?);
                     let gz = File::create(gz_path)?;
-                    let mut gz = flate2::write::GzEncoder::new(gz, compression_level);
-                    io::copy(&mut xz_orig, &mut gz)?;
+                    destinations.push(Box::new(flate2::write::GzEncoder::new(
+                        gz,
+                        compression_level,
+                    )));
                 }
 
                 // xz recompression with more aggressive settings than we want to take the time
@@ -60,6 +63,7 @@ impl Context {
                 // <192MB uncompressed tarballs. In promote-release since we're recompressing
                 // 100s of tarballs there's no need for each individual compression to be
                 // parallel.
+                let xz_recompressed = xz_path.with_extension("xz_recompressed");
                 if recompress_xz {
                     let mut filters = xz2::stream::Filters::new();
                     let mut lzma_ops = xz2::stream::LzmaOptions::new_preset(9).unwrap();
@@ -87,12 +91,32 @@ impl Context {
                     let stream =
                         xz2::stream::Stream::new_stream_encoder(&filters, xz2::stream::Check::None)
                             .unwrap();
-                    let xz_recompressed = xz_path.with_extension("xz_recompressed");
                     let xz_out = File::create(&xz_recompressed)?;
-                    let mut xz_out =
-                        xz2::write::XzEncoder::new_stream(std::io::BufWriter::new(xz_out), stream);
-                    let mut xz_orig = XzDecoder::new(File::open(xz_path)?);
-                    io::copy(&mut xz_orig, &mut xz_out)?;
+                    destinations.push(Box::new(xz2::write::XzEncoder::new_stream(
+                        std::io::BufWriter::new(xz_out),
+                        stream,
+                    )));
+                }
+
+                // We only decompress once and then write into each of the compressors before
+                // moving on.
+                //
+                // This code assumes that compression with `write_all` will never fail (i.e., we
+                // can take arbitrary amounts of data as input). That seems like a reasonable
+                // assumption though.
+                let mut decompressor = XzDecoder::new(File::open(xz_path)?);
+                let mut buffer = vec![0u8; 4 * 1024 * 1024];
+                loop {
+                    let length = decompressor.read(&mut buffer)?;
+                    if length == 0 {
+                        break;
+                    }
+                    for destination in destinations.iter_mut() {
+                        destination.write_all(&buffer[..length])?;
+                    }
+                }
+
+                if recompress_xz {
                     fs::rename(&xz_recompressed, xz_path)?;
                 }
 
