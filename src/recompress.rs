@@ -19,7 +19,7 @@ use std::time::Instant;
 use xz2::read::XzDecoder;
 
 impl Context {
-    pub fn recompress(&self, to_recompress: &[PathBuf]) -> anyhow::Result<()> {
+    pub fn recompress(&self, mut to_recompress: Vec<PathBuf>) -> anyhow::Result<()> {
         println!(
             "starting to recompress {} files across {} threads",
             to_recompress.len(),
@@ -35,6 +35,19 @@ impl Context {
         let recompress_gz = self.config.recompress_gz;
         let recompress_xz = self.config.recompress_xz;
         let compression_level = flate2::Compression::new(self.config.gzip_compression_level);
+
+        // Query the length of each file, and sort by length. This puts the smallest files
+        // toward the end of the array, which will generally deprioritize them in the parallel
+        // next parallel loop, avoiding as much of a long-tail on the compression work
+        // (smallest files are fastest to recompress typically).
+        //
+        // FIXME: Rayon's documentation on par_iter isn't very detailed in terms of whether this
+        // does any good. We may want to replace this with our own manual thread pool
+        // implementation that guarantees this property - each task is large enough that just
+        // popping from a single Mutex<Vec<...>> will be plenty fast enough.
+        to_recompress.sort_by_cached_key(|path| {
+            std::cmp::Reverse(fs::metadata(path).map(|m| m.len()).unwrap_or(0))
+        });
 
         to_recompress
             .par_iter()

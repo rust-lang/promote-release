@@ -391,7 +391,7 @@ impl Context {
         }
 
         // Generate recompressed artifacts from the input set.
-        self.recompress(&to_recompress)?;
+        self.recompress(to_recompress)?;
 
         Ok(())
     }
