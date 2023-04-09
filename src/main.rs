@@ -802,7 +802,7 @@ impl Context {
                 BLOG_PRIMARY_BRANCH,
                 &format!(
                     "posts/inside-rust/{}-{}-prerelease.md",
-                    chrono::Utc::today().format("%Y-%m-%d"),
+                    chrono::Utc::now().date_naive().format("%Y-%m-%d"),
                     version,
                 ),
                 &blog_contents,
@@ -839,7 +839,7 @@ impl Context {
             //
             // https://users.rust-lang.org/c/announcements/6
             let announcements_category = 6;
-            let date = chrono::Utc::today().format("%Y/%m/%d");
+            let date = chrono::Utc::now().date_naive().format("%Y/%m/%d");
             discourse.create_topic(
                 announcements_category,
                 &format!("Rust {version}"),
