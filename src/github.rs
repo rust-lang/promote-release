@@ -42,9 +42,7 @@ impl Github {
         let signature = self
             .key
             .sign(
-                rsa::padding::PaddingScheme::PKCS1v15Sign {
-                    hash: Some(rsa::hash::Hash::SHA2_256),
-                },
+                rsa::pkcs1v15::Pkcs1v15Sign::new::<sha2::Sha256>(),
                 &sha2::Sha256::new()
                     .chain_update(format!(
                         "{}.{}",
