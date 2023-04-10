@@ -56,6 +56,9 @@ RUN curl https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustu
     /root/.cargo/bin/rustup toolchain remove stable
 ENV PATH=/root/.cargo/bin:$PATH
 
+# Roughly 2x number of CPU cores we have in production.
+RUN aws configure set default.s3.max_concurrent_requests 150
+
 COPY --from=build /tmp/source/target/release/promote-release /usr/local/bin/
 COPY prod/load-gpg-keys.sh /usr/local/bin/load-gpg-keys
 
