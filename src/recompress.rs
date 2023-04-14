@@ -142,7 +142,7 @@ impl Context {
 
                 let mut compression_times = String::new();
                 for (idx, (name, _)) in destinations.iter().enumerate() {
-                    writeln!(
+                    write!(
                         compression_times,
                         ", {:.2?} {} compression",
                         time_by_dest[idx], name
