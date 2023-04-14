@@ -12,10 +12,11 @@
 
 use crate::Context;
 use rayon::prelude::*;
+use std::fmt::Write as FmtWrite;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use xz2::read::XzDecoder;
 
 impl Context {
@@ -53,17 +54,18 @@ impl Context {
             .par_iter()
             .map(|xz_path| {
                 println!("recompressing {}...", xz_path.display());
+                let file_start = Instant::now();
                 let gz_path = xz_path.with_extension("gz");
 
-                let mut destinations: Vec<Box<dyn io::Write>> = Vec::new();
+                let mut destinations: Vec<(&str, Box<dyn io::Write>)> = Vec::new();
 
                 // Produce gzip if explicitly enabled or the destination file doesn't exist.
                 if recompress_gz || !gz_path.is_file() {
                     let gz = File::create(gz_path)?;
-                    destinations.push(Box::new(flate2::write::GzEncoder::new(
-                        gz,
-                        compression_level,
-                    )));
+                    destinations.push((
+                        "gz",
+                        Box::new(flate2::write::GzEncoder::new(gz, compression_level)),
+                    ));
                 }
 
                 // xz recompression with more aggressive settings than we want to take the time
@@ -105,10 +107,13 @@ impl Context {
                         xz2::stream::Stream::new_stream_encoder(&filters, xz2::stream::Check::None)
                             .unwrap();
                     let xz_out = File::create(&xz_recompressed)?;
-                    destinations.push(Box::new(xz2::write::XzEncoder::new_stream(
-                        std::io::BufWriter::new(xz_out),
-                        stream,
-                    )));
+                    destinations.push((
+                        "xz",
+                        Box::new(xz2::write::XzEncoder::new_stream(
+                            std::io::BufWriter::new(xz_out),
+                            stream,
+                        )),
+                    ));
                 }
 
                 // We only decompress once and then write into each of the compressors before
@@ -119,15 +124,37 @@ impl Context {
                 // assumption though.
                 let mut decompressor = XzDecoder::new(File::open(xz_path)?);
                 let mut buffer = vec![0u8; 4 * 1024 * 1024];
+                let mut decompress_time = Duration::ZERO;
+                let mut time_by_dest = vec![Duration::ZERO; destinations.len()];
                 loop {
+                    let start = Instant::now();
                     let length = decompressor.read(&mut buffer)?;
+                    decompress_time += start.elapsed();
                     if length == 0 {
                         break;
                     }
-                    for destination in destinations.iter_mut() {
+                    for (idx, (_, destination)) in destinations.iter_mut().enumerate() {
+                        let start = std::time::Instant::now();
                         destination.write_all(&buffer[..length])?;
+                        time_by_dest[idx] += start.elapsed();
                     }
                 }
+
+                let mut compression_times = String::new();
+                for (idx, (name, _)) in destinations.iter().enumerate() {
+                    writeln!(
+                        compression_times,
+                        ", {:.2?} {} compression",
+                        time_by_dest[idx], name
+                    )?;
+                }
+                println!(
+                    "recompressed {}: {:.2?} total, {:.2?} decompression{}",
+                    xz_path.display(),
+                    file_start.elapsed(),
+                    decompress_time,
+                    compression_times
+                );
 
                 if recompress_xz {
                     fs::rename(&xz_recompressed, xz_path)?;
