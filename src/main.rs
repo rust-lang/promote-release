@@ -161,6 +161,8 @@ impl Context {
         // to do. This represents a scenario where changes have been merged to
         // the stable/beta branch but the version bump hasn't happened yet.
         self.download_artifacts(&rev)?;
+        // Generate recompressed artifacts from the input set.
+        self.recompress(&self.dl_dir())?;
         // The bypass_startup_checks condition is after the function call since we need that
         // function to run even if we wan to discard its output (it fetches and stores the current
         // version we're about to release).
@@ -366,30 +368,17 @@ impl Context {
         // 2. We're making a stable release. The stable release is first signed
         //    with the dev key and then it's signed with the prod key later. We
         //    want the prod key to overwrite the dev key signatures.
-        //
-        // Also, collect paths that need to be recompressed
-        let mut to_recompress = Vec::new();
         for file in dl.read_dir()? {
             let file = file?;
             let path = file.path();
             match path.extension().and_then(|s| s.to_str()) {
-                // Store off the input files for potential recompression.
-                Some("xz") => {
-                    to_recompress.push(path.to_path_buf());
-                }
                 // Delete signature/hash files...
                 Some("asc") | Some("sha256") => {
-                    fs::remove_file(&path)?;
-                }
-                Some("gz") if self.config.recompress_gz => {
                     fs::remove_file(&path)?;
                 }
                 _ => {}
             }
         }
-
-        // Generate recompressed artifacts from the input set.
-        self.recompress(to_recompress)?;
 
         Ok(())
     }
