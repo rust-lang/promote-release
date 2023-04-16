@@ -14,12 +14,28 @@ use crate::Context;
 use std::fmt::Write as FmtWrite;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use xz2::read::XzDecoder;
 
 impl Context {
-    pub fn recompress(&self, mut to_recompress: Vec<PathBuf>) -> anyhow::Result<()> {
+    pub fn recompress(&self, directory: &Path) -> anyhow::Result<()> {
+        let mut to_recompress = Vec::new();
+        for file in directory.read_dir()? {
+            let file = file?;
+            let path = file.path();
+            match path.extension().and_then(|s| s.to_str()) {
+                // Store off the input files for potential recompression.
+                Some("xz") => {
+                    to_recompress.push(path.to_path_buf());
+                }
+                Some("gz") if self.config.recompress_gz => {
+                    fs::remove_file(&path)?;
+                }
+                _ => {}
+            }
+        }
+
         println!(
             "starting to recompress {} files across {} threads",
             to_recompress.len(),
