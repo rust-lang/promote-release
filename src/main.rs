@@ -196,9 +196,7 @@ impl Context {
         )?;
 
         // Removes files that we are not shipping from the files we're about to upload.
-        if let Some(shipped_files) = &execution.shipped_files {
-            self.prune_unused_files(shipped_files)?;
-        }
+        self.prune_unused_files(&execution.shipped_files)?;
 
         // Sign both the downloaded artifacts and all the generated manifests. The signatures
         // of the downloaded files and the real manifests are permanent, while the signatures

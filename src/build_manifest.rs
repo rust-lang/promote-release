@@ -102,33 +102,19 @@ impl<'a> BuildManifest<'a> {
 }
 
 pub(crate) struct Execution {
-    pub(crate) shipped_files: Option<HashSet<PathBuf>>,
+    pub(crate) shipped_files: HashSet<PathBuf>,
     pub(crate) checksum_cache: HashMap<PathBuf, String>,
 }
 
 impl Execution {
     fn new(shipped_files_path: &Path, checksum_cache_path: &Path) -> Result<Self, Error> {
-        // Once https://github.com/rust-lang/rust/pull/78196 reaches stable we can assume the
-        // "shipped files" file is always generated, and we can remove the Option<_>.
-        let shipped_files = if shipped_files_path.is_file() {
-            Some(
-                std::fs::read_to_string(shipped_files_path)?
-                    .lines()
-                    .filter(|line| !line.trim().is_empty())
-                    .map(PathBuf::from)
-                    .collect(),
-            )
-        } else {
-            None
-        };
+        let shipped_files = std::fs::read_to_string(shipped_files_path)?
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(PathBuf::from)
+            .collect();
 
-        // Once https://github.com/rust-lang/rust/pull/78409 reaches stable we can assume the
-        // checksum cache will always be generated, and we can remove the if branch.
-        let checksum_cache = if checksum_cache_path.is_file() {
-            serde_json::from_slice(&std::fs::read(checksum_cache_path)?)?
-        } else {
-            HashMap::new()
-        };
+        let checksum_cache = serde_json::from_slice(&std::fs::read(checksum_cache_path)?)?;
 
         Ok(Execution {
             shipped_files,
