@@ -3,7 +3,7 @@ version: '3'
 
 services:
   minio:
-    image: quay.io/minio/minio:RELEASE.2022-10-24T18-35-07Z
+    image: quay.io/minio/minio:RELEASE.2023-04-13T03-08-07Z
     command: minio server /data
     ports:
       - 9000:9000

@@ -5,7 +5,7 @@
 # regularly takes 2 minutes to download 20MB of binary). The only other way
 # they distribute the CLI is from Docker, so we load their image as a stage and
 # then copy the binary from it later in the build.
-FROM quay.io/minio/mc:RELEASE.2022-10-22T03-39-29Z AS mc
+FROM quay.io/minio/mc:RELEASE.2023-04-12T02-21-51Z AS mc
 
 FROM ubuntu:22.04
 
