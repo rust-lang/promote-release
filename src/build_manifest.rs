@@ -37,6 +37,11 @@ impl<'a> BuildManifest<'a> {
         })
     }
 
+    pub(crate) fn clear_checksum_cache(&self) -> Result<(), Error> {
+        std::fs::remove_file(&self.checksum_cache_path)?;
+        Ok(())
+    }
+
     pub(crate) fn run(&self, upload_base: &str, dest: &Path) -> Result<Execution, Error> {
         let config = &self.builder.config;
 
