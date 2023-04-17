@@ -25,6 +25,7 @@ use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
 use github::{CreateTag, Github};
+use rayon::prelude::*;
 
 use crate::config::{Channel, Config};
 
@@ -171,6 +172,18 @@ impl Context {
         }
 
         self.assert_all_components_present()?;
+
+        // Quickly produce gzip compressed artifacts that are needed for successful manifest
+        // building.
+        let recompress = [
+            self.dl_dir()
+                .join("rust-nightly-x86_64-unknown-linux-gnu.tar.xz"),
+            self.dl_dir()
+                .join("cargo-nightly-x86_64-unknown-linux-gnu.tar.xz"),
+        ];
+        recompress.par_iter().try_for_each(|tarball| {
+            recompress::recompress_file(tarball, false, flate2::Compression::fast(), false)
+        })?;
 
         // Ok we've now determined that a release needs to be done.
 
