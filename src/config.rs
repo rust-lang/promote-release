@@ -1,4 +1,5 @@
 use crate::discourse::Discourse;
+use crate::fastly::Fastly;
 use crate::github::Github;
 use crate::Context;
 use anyhow::{Context as _, Error};
@@ -192,6 +193,14 @@ pub(crate) struct Config {
 
     /// The app ID associated with the private key being passed.
     pub(crate) github_app_id: Option<u32>,
+
+    /// An API token for Fastly with the `purge_select` scope.
+    pub(crate) fastly_api_token: Option<String>,
+    /// The static domain name that is used with Fastly, e.g. `static.rust-lang.org`.
+    pub(crate) fastly_static_domain: Option<String>,
+
+    /// Temporary variable to test Fastly in the dev environment only.
+    pub(crate) invalidate_fastly: bool,
 }
 
 impl Config {
@@ -226,6 +235,9 @@ impl Config {
             discourse_api_key: maybe_env("DISCOURSE_API_KEY")?,
             github_app_key: maybe_env("GITHUB_APP_KEY")?,
             github_app_id: maybe_env("GITHUB_APP_ID")?,
+            fastly_api_token: maybe_env("FASTLY_API_TOKEN")?,
+            fastly_static_domain: maybe_env("FASTLY_STATIC_DOMAIN")?,
+            invalidate_fastly: bool_env("INVALIDATE_FASTLY")?,
         })
     }
 
@@ -243,6 +255,14 @@ impl Config {
                 user.clone(),
                 key.clone(),
             ))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn fastly(&self) -> Option<Fastly> {
+        if let (Some(token), Some(domain)) = (&self.fastly_api_token, &self.fastly_static_domain) {
+            Some(Fastly::new(token.clone(), domain.clone()))
         } else {
             None
         }
