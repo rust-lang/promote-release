@@ -175,15 +175,25 @@ impl Context {
 
         // Quickly produce gzip compressed artifacts that are needed for successful manifest
         // building.
-        let recompress = [
-            self.dl_dir()
-                .join("rust-nightly-x86_64-unknown-linux-gnu.tar.xz"),
-            self.dl_dir()
-                .join("cargo-nightly-x86_64-unknown-linux-gnu.tar.xz"),
-        ];
-        recompress.par_iter().try_for_each(|tarball| {
-            recompress::recompress_file(tarball, false, flate2::Compression::fast(), false)
-        })?;
+        //
+        // Nightly (1.71+) supports this upstream without the extra recompression, see
+        // https://github.com/rust-lang/rust/pull/110436.
+        if self.config.channel != Channel::Nightly {
+            let version = match self.config.channel {
+                Channel::Stable => self.current_version.as_deref().unwrap(),
+                Channel::Beta => "beta",
+                Channel::Nightly => "nightly",
+            };
+            let recompress = [
+                self.dl_dir()
+                    .join(format!("rust-{}-x86_64-unknown-linux-gnu.tar.xz", version)),
+                self.dl_dir()
+                    .join(format!("cargo-{}-x86_64-unknown-linux-gnu.tar.xz", version)),
+            ];
+            recompress.par_iter().try_for_each(|tarball| {
+                recompress::recompress_file(tarball, false, flate2::Compression::fast(), false)
+            })?;
+        }
 
         // Ok we've now determined that a release needs to be done.
 
