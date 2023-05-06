@@ -275,13 +275,13 @@ impl Context {
         for e in self.dl_dir().read_dir()? {
             let e = e?;
             let filename = e.file_name().into_string().unwrap();
-            if !filename.starts_with("rustc-") || !filename.ends_with(".tar.gz") {
+            if !filename.starts_with("rustc-") || !filename.ends_with(".tar.xz") {
                 continue;
             }
             println!("looking inside {} for a version", filename);
 
             let file = File::open(e.path())?;
-            let reader = flate2::read::GzDecoder::new(file);
+            let reader = xz2::read::XzDecoder::new(file);
             let mut archive = tar::Archive::new(reader);
 
             let mut version_file = None;
