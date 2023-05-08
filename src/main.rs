@@ -25,7 +25,6 @@ use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
 use github::{CreateTag, Github};
-use rayon::prelude::*;
 
 use crate::config::{Channel, Config};
 
@@ -173,26 +172,13 @@ impl Context {
 
         self.assert_all_components_present()?;
 
-        // Quickly produce gzip compressed artifacts that are needed for successful manifest
-        // building.
+        // Produce a full set of artifacts so that pruning works correctly.
         //
         // Nightly (1.71+) supports this upstream without the extra recompression, see
-        // https://github.com/rust-lang/rust/pull/110436.
+        // https://github.com/rust-lang/rust/pull/110436. We expect that this snippet can be fully
+        // dropped once that PR hits stable.
         if self.config.channel != Channel::Nightly {
-            let version = match self.config.channel {
-                Channel::Stable => self.current_version.as_deref().unwrap(),
-                Channel::Beta => "beta",
-                Channel::Nightly => "nightly",
-            };
-            let recompress = [
-                self.dl_dir()
-                    .join(format!("rust-{}-x86_64-unknown-linux-gnu.tar.xz", version)),
-                self.dl_dir()
-                    .join(format!("cargo-{}-x86_64-unknown-linux-gnu.tar.xz", version)),
-            ];
-            recompress.par_iter().try_for_each(|tarball| {
-                recompress::recompress_file(tarball, false, flate2::Compression::fast(), false)
-            })?;
+            self.recompress(&self.dl_dir())?;
         }
 
         // Ok we've now determined that a release needs to be done.
@@ -214,7 +200,9 @@ impl Context {
 
         // Generate recompressed artifacts from the input set. This invalidates signatures etc
         // produced in the earlier step so we'll need to re-run the manifest building.
-        self.recompress(&self.dl_dir())?;
+        if self.config.channel == Channel::Nightly {
+            self.recompress(&self.dl_dir())?;
+        }
 
         // Since we recompressed, need to clear out the checksum cache.
         build_manifest.clear_checksum_cache()?;
