@@ -38,6 +38,7 @@ struct Context {
     config: Config,
     date: String,
     current_version: Option<String>,
+    current_cargo_version: Option<String>,
 }
 
 // Called as:
@@ -66,6 +67,7 @@ impl Context {
             date,
             handle: Easy::new(),
             current_version: None,
+            current_cargo_version: None,
         })
     }
 
@@ -262,18 +264,12 @@ impl Context {
         Ok(())
     }
 
-    fn current_version_same(&mut self, prev: &str) -> Result<bool, Error> {
-        // nightly's always changing
-        if self.config.channel == Channel::Nightly {
-            return Ok(false);
-        }
-        let prev_version = prev.split(' ').next().unwrap();
-
+    fn load_version(&mut self, mut filter: impl FnMut(&str) -> bool) -> Result<String, Error> {
         let mut current = None;
         for e in self.dl_dir().read_dir()? {
             let e = e?;
             let filename = e.file_name().into_string().unwrap();
-            if !filename.starts_with("rustc-") || !filename.ends_with(".tar.xz") {
+            if !filter(&filename) && filename.ends_with(".tar.xz") {
                 continue;
             }
             println!("looking inside {} for a version", filename);
@@ -301,12 +297,25 @@ impl Context {
                 break;
             }
         }
-        let current = current.ok_or_else(|| anyhow::anyhow!("no archives with a version"))?;
+        current.ok_or_else(|| anyhow::anyhow!("no archives with a version"))
+    }
 
+    fn current_version_same(&mut self, prev: &str) -> Result<bool, Error> {
+        // nightly's always changing
+        if self.config.channel == Channel::Nightly {
+            return Ok(false);
+        }
+        let prev_version = prev.split(' ').next().unwrap();
+
+        let current = self.load_version(|filename| filename.starts_with("rustc-"))?;
         println!("current version: {}", current);
-
         let current_version = current.split(' ').next().unwrap();
         self.current_version = Some(current_version.to_string());
+
+        let current_cargo = self.load_version(|filename| filename.starts_with("cargo-"))?;
+        println!("current cargo version: {}", current_cargo);
+        let current_version = current_cargo.split(' ').next().unwrap();
+        self.current_cargo_version = Some(current_cargo.to_string());
 
         // The release process for beta looks like so:
         //
@@ -613,13 +622,43 @@ impl Context {
             return Ok(());
         };
 
-        if let Some(repo) = self.config.rustc_tag_repository.clone() {
-            self.tag_repository(signer, &mut github, &repo, rustc_commit)?;
+        if let Some(rustc_repo) = self.config.rustc_tag_repository.clone() {
+            let rustc_version = self.current_version.clone().expect("has current version");
+            self.tag_repository(
+                signer,
+                &mut github,
+                &rustc_repo,
+                rustc_commit,
+                &rustc_version,
+            )?;
 
             // Once we've tagged rustc, kick off a thanks workflow run.
             github
                 .token("rust-lang/thanks")?
                 .workflow_dispatch("ci.yml", "master")?;
+
+            if let Some(cargo_repo) = self.config.cargo_tag_repository.clone() {
+                let cargo_version = self
+                    .current_cargo_version
+                    .clone()
+                    .expect("has current cargo version");
+                let cargo_commit = match github
+                    .token(&rustc_repo)?
+                    .read_file(Some(rustc_commit), "src/tools/cargo")?
+                {
+                    github::GitFile::Submodule { sha } => sha,
+                    github::GitFile::File { .. } => {
+                        anyhow::bail!("src/tools/cargo is expected to be a submodule")
+                    }
+                };
+                self.tag_repository(
+                    signer,
+                    &mut github,
+                    &cargo_repo,
+                    &cargo_commit,
+                    &cargo_version,
+                )?;
+            }
         }
 
         Ok(())
@@ -631,8 +670,8 @@ impl Context {
         github: &mut Github,
         repository: &str,
         commit: &str,
+        version: &str,
     ) -> Result<(), Error> {
-        let version = self.current_version.as_ref().expect("has current version");
         let tag_name = version.to_owned();
         let username = "rust-lang/promote-release";
         let email = "release-team@rust-lang.org";
