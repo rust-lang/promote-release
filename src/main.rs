@@ -5,6 +5,7 @@ mod build_manifest;
 mod config;
 mod curl_helper;
 mod discourse;
+mod fastly;
 mod github;
 mod recompress;
 mod sign;
@@ -18,6 +19,7 @@ use std::time::Duration;
 use std::{collections::HashSet, env};
 
 use crate::build_manifest::BuildManifest;
+use crate::config::{Channel, Config};
 use crate::sign::Signer;
 use crate::smoke_test::SmokeTester;
 use anyhow::Error;
@@ -25,8 +27,6 @@ use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
 use github::{CreateTag, Github};
-
-use crate::config::{Channel, Config};
 
 const TARGET: &str = env!("TARGET");
 
@@ -565,7 +565,12 @@ impl Context {
     }
 
     fn invalidate_releases(&self) -> Result<(), Error> {
-        self.invalidate_cloudfront(&self.config.cloudfront_static_id, &["/dist/*".into()])
+        let paths = ["/dist/*".into()];
+
+        self.invalidate_cloudfront(&self.config.cloudfront_static_id, &paths)?;
+        self.invalidate_fastly(&paths)?;
+
+        Ok(())
     }
 
     fn invalidate_cloudfront(&self, distribution_id: &str, paths: &[String]) -> Result<(), Error> {
@@ -596,6 +601,32 @@ impl Context {
             .arg(format!("file://{}", dst.display()))
             .arg("--distribution-id")
             .arg(distribution_id))?;
+
+        Ok(())
+    }
+
+    fn invalidate_fastly(&self, paths: &[String]) -> Result<(), Error> {
+        // Fastly invalidations are opt-in while we test the integration
+        // Set PROMOTE_RELEASE_INVALIDATE_FASTLY=1 to enable them
+        if !self.config.invalidate_fastly {
+            return Ok(());
+        }
+
+        let mut fastly = match self.config.fastly() {
+            Some(fastly) => fastly,
+            None => {
+                println!();
+                println!("WARNING! Skipped Fastly invalidation of: {:?}", paths);
+                println!("Set PROMOTE_RELEASE_FASTLY_API_TOKEN and PROMOTE_RELEASE_FASTLY_STATIC_DOMAIN if you want to invalidate Fastly");
+                println!();
+                return Ok(());
+            }
+        };
+
+        for path in paths {
+            let path = path.replace('*', "");
+            fastly.purge(&path)?;
+        }
 
         Ok(())
     }
