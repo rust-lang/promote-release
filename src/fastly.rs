@@ -17,13 +17,14 @@ impl Fastly {
     }
 
     pub fn purge(&mut self, path: &str) -> Result<(), Error> {
+        let url = format!("https://api.fastly.com/purge/{}/{}", self.domain, path);
+
         self.start_new_request()?;
 
         self.client.post(true)?;
-        self.client.url(&format!(
-            "https://api.fastly.com/purge/{}/{}",
-            self.domain, path
-        ))?;
+        self.client.url(&url)?;
+
+        println!("invalidating Fastly cache with POST '{}'", url);
 
         self.client.perform().map_err(|error| error.into())
     }
