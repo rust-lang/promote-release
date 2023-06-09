@@ -152,6 +152,14 @@ pub(crate) struct Config {
     /// Should be a org/repo code, e.g., rust-lang/rust.
     pub(crate) rustc_tag_repository: Option<String>,
 
+    /// Where to tag stable cargo releases.
+    ///
+    /// This repository should have content write permissions with the github
+    /// app configuration.
+    ///
+    /// Should be a org/repo code, e.g., rust-lang/cargo.
+    pub(crate) cargo_tag_repository: Option<String>,
+
     /// Where to publish new blog PRs.
     ///
     /// We create a new PR announcing releases in this repository; currently we
@@ -228,6 +236,7 @@ impl Config {
             recompress_xz: bool_env("RECOMPRESS_XZ")?,
             recompress_gz: bool_env("RECOMPRESS_GZ")?,
             rustc_tag_repository: maybe_env("RUSTC_TAG_REPOSITORY")?,
+            cargo_tag_repository: maybe_env("CARGO_TAG_REPOSITORY")?,
             blog_repository: maybe_env("BLOG_REPOSITORY")?,
             blog_pr: maybe_env("BLOG_MERGE_PR")?,
             scheduled_release_date: maybe_env("BLOG_SCHEDULED_RELEASE_DATE")?,
