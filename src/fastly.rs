@@ -17,7 +17,11 @@ impl Fastly {
     }
 
     pub fn purge(&mut self, path: &str) -> Result<(), Error> {
-        let url = format!("https://api.fastly.com/purge/{}/{}", self.domain, path);
+        let sanitized_path = path.trim_start_matches('/');
+        let url = format!(
+            "https://api.fastly.com/purge/{}/{}",
+            self.domain, sanitized_path
+        );
 
         self.start_new_request()?;
 
