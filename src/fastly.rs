@@ -3,15 +3,15 @@ use curl::easy::Easy;
 
 pub struct Fastly {
     api_token: String,
-    domain: String,
+    service_id: String,
     client: Easy,
 }
 
 impl Fastly {
-    pub fn new(api_token: String, domain: String) -> Self {
+    pub fn new(api_token: String, service_id: String) -> Self {
         Self {
             api_token,
-            domain,
+            service_id,
             client: Easy::new(),
         }
     }
@@ -19,8 +19,8 @@ impl Fastly {
     pub fn purge(&mut self, path: &str) -> Result<(), Error> {
         let sanitized_path = path.trim_start_matches('/');
         let url = format!(
-            "https://api.fastly.com/purge/{}/{}",
-            self.domain, sanitized_path
+            "https://api.fastly.com/service/{}/purge/{}",
+            self.service_id, sanitized_path
         );
 
         self.start_new_request()?;
