@@ -204,8 +204,8 @@ pub(crate) struct Config {
 
     /// An API token for Fastly with the `purge_select` scope.
     pub(crate) fastly_api_token: Option<String>,
-    /// The static domain name that is used with Fastly, e.g. `static.rust-lang.org`.
-    pub(crate) fastly_static_domain: Option<String>,
+    /// The Fastly service ID to purge when releasing.
+    pub(crate) fastly_service_id: Option<String>,
 
     /// Temporary variable to test Fastly in the dev environment only.
     pub(crate) invalidate_fastly: bool,
@@ -245,7 +245,7 @@ impl Config {
             github_app_key: maybe_env("GITHUB_APP_KEY")?,
             github_app_id: maybe_env("GITHUB_APP_ID")?,
             fastly_api_token: maybe_env("FASTLY_API_TOKEN")?,
-            fastly_static_domain: maybe_env("FASTLY_STATIC_DOMAIN")?,
+            fastly_service_id: maybe_env("FASTLY_SERVICE_ID")?,
             invalidate_fastly: bool_env("INVALIDATE_FASTLY")?,
         })
     }
@@ -270,8 +270,8 @@ impl Config {
     }
 
     pub(crate) fn fastly(&self) -> Option<Fastly> {
-        if let (Some(token), Some(domain)) = (&self.fastly_api_token, &self.fastly_static_domain) {
-            Some(Fastly::new(token.clone(), domain.clone()))
+        if let (Some(token), Some(service_id)) = (&self.fastly_api_token, &self.fastly_service_id) {
+            Some(Fastly::new(token.clone(), service_id.clone()))
         } else {
             None
         }

@@ -574,6 +574,9 @@ impl Context {
     }
 
     fn invalidate_releases(&self) -> Result<(), Error> {
+        // The following paths need to be added as surrogate keys to the Fastly service, otherwise
+        // they won't be invalidated. See the following pull request for an example:
+        // https://github.com/rust-lang/simpleinfra/pull/295
         let paths = ["/dist/*".into()];
 
         self.invalidate_cloudfront(&self.config.cloudfront_static_id, &paths)?;
@@ -626,15 +629,14 @@ impl Context {
             None => {
                 println!();
                 println!("WARNING! Skipped Fastly invalidation of: {:?}", paths);
-                println!("Set PROMOTE_RELEASE_FASTLY_API_TOKEN and PROMOTE_RELEASE_FASTLY_STATIC_DOMAIN if you want to invalidate Fastly");
+                println!("Set PROMOTE_RELEASE_FASTLY_API_TOKEN and PROMOTE_RELEASE_FASTLY_SERVICE_ID if you want to invalidate Fastly");
                 println!();
                 return Ok(());
             }
         };
 
         for path in paths {
-            let path = path.replace('*', "");
-            fastly.purge(&path)?;
+            fastly.purge(path)?;
         }
 
         Ok(())
