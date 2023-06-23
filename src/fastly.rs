@@ -17,10 +17,10 @@ impl Fastly {
     }
 
     pub fn purge(&mut self, path: &str) -> Result<(), Error> {
-        let sanitized_path = path.trim_start_matches('/');
+        let surrogate_key = path_to_surrogate_key(path);
         let url = format!(
             "https://api.fastly.com/service/{}/purge/{}",
-            self.service_id, sanitized_path
+            self.service_id, surrogate_key
         );
 
         self.start_new_request()?;
@@ -41,5 +41,23 @@ impl Fastly {
         headers.append("Content-Type: application/json")?;
         self.client.http_headers(headers)?;
         Ok(())
+    }
+}
+
+fn path_to_surrogate_key(path: &str) -> String {
+    path.chars().filter(|c| c.is_alphanumeric()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_to_surrogate_key_dist() {
+        let path = "/dist/*";
+
+        let surrogate_key = path_to_surrogate_key(path);
+
+        assert_eq!("dist", surrogate_key);
     }
 }
