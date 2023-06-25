@@ -269,7 +269,7 @@ impl Context {
         for e in self.dl_dir().read_dir()? {
             let e = e?;
             let filename = e.file_name().into_string().unwrap();
-            if !filter(&filename) && filename.ends_with(".tar.xz") {
+            if !(filter(&filename) && filename.ends_with(".tar.xz")) {
                 continue;
             }
             println!("looking inside {} for a version", filename);
