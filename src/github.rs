@@ -1,4 +1,5 @@
 use crate::curl_helper::BodyExt;
+use anyhow::Context;
 use curl::easy::Easy;
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use sha2::Digest;
@@ -132,7 +133,7 @@ impl RepositoryClient<'_> {
     }
 
     pub(crate) fn tag(&mut self, tag: CreateTag<'_>) -> anyhow::Result<()> {
-        #[derive(serde::Serialize)]
+        #[derive(Debug, serde::Serialize)]
         struct CreateTagInternal<'a> {
             tag: &'a str,
             message: &'a str,
@@ -143,7 +144,7 @@ impl RepositoryClient<'_> {
             tagger: CreateTagTaggerInternal<'a>,
         }
 
-        #[derive(serde::Serialize)]
+        #[derive(Debug, serde::Serialize)]
         struct CreateTagTaggerInternal<'a> {
             name: &'a str,
             email: &'a str,
@@ -159,19 +160,21 @@ impl RepositoryClient<'_> {
             "https://api.github.com/repos/{repository}/git/tags",
             repository = self.repo,
         ))?;
+        let request = CreateTagInternal {
+            tag: tag.tag_name,
+            message: tag.message,
+            object: tag.commit,
+            type_: "commit",
+            tagger: CreateTagTaggerInternal {
+                name: tag.tagger_name,
+                email: tag.tagger_email,
+            },
+        };
         let created = self
             .client
-            .with_body(CreateTagInternal {
-                tag: tag.tag_name,
-                message: tag.message,
-                object: tag.commit,
-                type_: "commit",
-                tagger: CreateTagTaggerInternal {
-                    name: tag.tagger_name,
-                    email: tag.tagger_email,
-                },
-            })
-            .send_with_response::<CreatedTag>()?;
+            .with_body(&request)
+            .send_with_response::<CreatedTag>()
+            .with_context(|| format!("tag request {:?}", request))?;
 
         self.create_ref(&format!("refs/tags/{}", tag.tag_name), &created.sha)?;
 
