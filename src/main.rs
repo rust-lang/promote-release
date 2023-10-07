@@ -309,12 +309,12 @@ impl Context {
 
         let current = self.load_version(|filename| filename.starts_with("rustc-"))?;
         println!("current version: {}", current);
-        let current_version = current.split(' ').next().unwrap();
-        self.current_version = Some(current_version.to_string());
+        let current_rustc = current.split(' ').next().unwrap();
+        self.current_version = Some(current_rustc.to_string());
 
         let current_cargo = self.load_version(|filename| filename.starts_with("cargo-"))?;
         println!("current cargo version: {}", current_cargo);
-        let current_version = current_cargo.split(' ').next().unwrap();
+        let current_cargo = current_cargo.split(' ').next().unwrap();
         self.current_cargo_version = Some(current_cargo.to_string());
 
         // The release process for beta looks like so:
@@ -336,7 +336,7 @@ impl Context {
             );
         }
 
-        Ok(prev_version == current_version)
+        Ok(prev_version == current_rustc)
     }
 
     /// Make sure this release comes with a minimum of components.
