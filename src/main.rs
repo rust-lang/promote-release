@@ -859,6 +859,12 @@ impl Context {
     fn aws_s3(&self) -> Command {
         let mut cmd = Command::new("aws");
 
+        // Log request IDs while we investigate an error coming from S3:
+        // [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1007)
+        //
+        // See https://github.com/rust-lang/promote-release/issues/77 for tracking for this.
+        cmd.arg("--debug");
+
         // Allow using non-S3 backends with the AWS CLI.
         if let Some(url) = &self.config.s3_endpoint_url {
             cmd.arg("--endpoint-url");
