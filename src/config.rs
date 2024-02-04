@@ -285,11 +285,8 @@ impl Config {
         internals_url: Option<&str>,
     ) -> Option<String> {
         let scheduled_release_date = self.scheduled_release_date?;
-        let release_notes_url = format!(
-            "https://github.com/rust-lang/rust/blob/stable/RELEASES.md#version-{}-{}",
-            release.replace('.', ""),
-            scheduled_release_date.format("%Y-%m-%d"),
-        );
+        // Can't use `doc.rust-lang.org`, because the release hasn't been promoted yet.
+        let release_notes_url = format!("https://dev-doc.rust-lang.org/{release}/releases.html");
         let human_date = scheduled_release_date.format("%B %-d");
         let internals = internals_url
             .map(|url| format!("You can leave feedback on the [internals thread]({url})."))
