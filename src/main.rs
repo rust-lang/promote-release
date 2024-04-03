@@ -89,6 +89,7 @@ impl Context {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(self.work.join(".lock"))?;
         file.try_lock_exclusive()?;
         Ok(file)
