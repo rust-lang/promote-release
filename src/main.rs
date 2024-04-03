@@ -468,8 +468,12 @@ impl Context {
         let tarball_prefix = format!("rust-docs-{}-{}", version, target);
         let tarball = format!("{}.tar.gz", self.dl_dir().join(&tarball_prefix).display());
         let tarball_dir = format!("{}/rust-docs/share/doc/rust/html", tarball_prefix);
+
+        // The `m` flag touches all extracted files, therefore setting their modification time
+        // to the current date. This will cause the sync to overwrite all remote files with the
+        // local files.
         run(Command::new("tar")
-            .arg("xf")
+            .arg("xfm")
             .arg(&tarball)
             .arg("--strip-components=6")
             .arg(&tarball_dir)
