@@ -503,16 +503,18 @@ impl Context {
                 .success()
             {
                 // Unpack the rustc documentation into the new directory.
+                // // Touch all files as well (see above for why).
                 run(Command::new("tar")
-                    .arg("xf")
+                    .arg("xfm")
                     .arg(&tarball)
                     .arg("--strip-components=7")
                     .arg(&tarball_dir_new)
                     .current_dir(&rustc_docs))?;
             } else {
                 // Unpack the rustc documentation into the new directory.
+                // Touch all files as well (see above for why).
                 run(Command::new("tar")
-                    .arg("xf")
+                    .arg("xfm")
                     .arg(&tarball)
                     .arg("--strip-components=6")
                     .arg(&tarball_dir)
