@@ -73,7 +73,7 @@ impl FromStr for Action {
         match input {
             "promote-release" => Ok(Action::PromoteRelease),
             "promote-branches" => Ok(Action::PromoteBranches),
-            _ => anyhow::bail!("unknown channel: {}", input),
+            _ => anyhow::bail!("unknown action: {}", input),
         }
     }
 }
