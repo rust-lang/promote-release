@@ -48,6 +48,8 @@ impl std::fmt::Display for Channel {
     }
 }
 
+// Allow all variant names to start with `Promote`
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Action {
     /// This is the default action, what we'll do if the environment variable
@@ -64,6 +66,13 @@ pub(crate) enum Action {
     /// * Create a rust-lang/cargo branch for the appropriate beta commit.
     /// * Post a PR against the newly created beta branch bump src/ci/channel to `beta`.
     PromoteBranches,
+
+    /// This promotes a new rustup release:
+    ///
+    /// * Copy binaries into archives
+    /// * Copy binaries from dev-static to production
+    /// * Update dev release number
+    PromoteRustup,
 }
 
 impl FromStr for Action {
@@ -73,6 +82,7 @@ impl FromStr for Action {
         match input {
             "promote-release" => Ok(Action::PromoteRelease),
             "promote-branches" => Ok(Action::PromoteBranches),
+            "promote-rustup" => Ok(Action::PromoteRustup),
             _ => anyhow::bail!("unknown action: {}", input),
         }
     }
