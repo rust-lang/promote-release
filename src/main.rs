@@ -77,7 +77,7 @@ impl Context {
         match self.config.action {
             config::Action::PromoteRelease => self.do_release()?,
             config::Action::PromoteBranches => self.do_branching()?,
-            config::Action::PromoteRustup => self.do_rustup()?,
+            config::Action::PromoteRustup => self.promote_rustup()?,
         }
         Ok(())
     }
