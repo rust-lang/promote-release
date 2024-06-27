@@ -15,13 +15,13 @@ impl Context {
     ///
     /// `rustup` uses different branches to manage releases. Whenever a commit is pushed to the
     /// `stable` branch in [rust-lang/rustup], GitHub Actions workflows build release artifacts and
-    /// copy them into `s3://dev-static-rust-lang-org/rustup/dist/`.
+    /// copy them into `s3://rustup-builds/builds/${commit-sha}/`.
     ///
-    /// When a new release is done and this method is invoked, it downloads the artifacts from that
+    /// When a new release is cut and this method is invoked, it downloads the artifacts from that
     /// bucket (which must always be set as the `DOWNLOAD_BUCKET` variable). A copy of the artifacts
-    /// is archived in `s3://${UPLOAD_BUCKET}/rustup/archive/${version}/`, where `version` is passed
-    /// to this program as a command-line argument. `UPLOAD_BUCKET` can either be the `dev-static`
-    /// or the `static` bucket.
+    /// is archived in `s3://${UPLOAD_BUCKET}/rustup/archive/${version}/`, where `version` is
+    /// derived from the Cargo.toml file in the `stable` branch. `UPLOAD_BUCKET` can either be the
+    /// `dev-static` or the `static` bucket.
     ///
     /// If the release is for the `stable` channel, the artifacts are also copied to the `dist/`
     /// path in the `UPLOAD_BUCKET` bucket. The `dist/` path is used by the `rustup` installer to
