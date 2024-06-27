@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context as AnyhowContext, Error};
+use serde::Deserialize;
 
 use crate::config::Channel;
 use crate::{run, Context};
@@ -37,6 +38,7 @@ impl Context {
 
         // The latest commit on the `stable` branch is used to determine the version number
         let head_sha = self.get_head_sha_for_rustup()?;
+        let version = self.get_next_rustup_version(&head_sha)?;
 
         // Download the rustup artifacts from S3
         println!("Downloading artifacts from dev-static...");
@@ -77,6 +79,26 @@ impl Context {
             .context("failed to get HEAD SHA from GitHub - credentials not configured")?
             .token("rust-lang/rustup")?
             .get_ref("heads/stable")
+    }
+
+    fn get_next_rustup_version(&self, sha: &str) -> anyhow::Result<String> {
+        println!("Getting next Rustup version from Cargo.toml...");
+
+        #[derive(Debug, Deserialize)]
+        struct CargoToml {
+            version: String,
+        }
+
+        let cargo_toml = self
+            .config
+            .github()
+            .context("failed to get new rustup version from GitHub - credentials not configured")?
+            .token("rust-lang/rustup")?
+            .read_file(Some(sha), "Cargo.toml")?;
+
+        let toml: CargoToml = toml::from_str(&cargo_toml.content()?)?;
+
+        Ok(toml.version)
     }
 
     fn download_rustup_artifacts(&mut self) -> Result<PathBuf, Error> {
