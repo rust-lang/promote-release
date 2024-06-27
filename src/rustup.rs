@@ -40,9 +40,8 @@ impl Context {
         let head_sha = self.get_head_sha_for_rustup()?;
         let version = self.get_next_rustup_version(&head_sha)?;
 
-        // Download the rustup artifacts from S3
-        println!("Downloading artifacts from dev-static...");
-        let dist_dir = self.download_rustup_artifacts()?;
+        // Download the Rustup artifacts from S3
+        let dist_dir = self.download_rustup_artifacts(&head_sha)?;
 
         // Archive the artifacts
         println!("Archiving artifacts...");
@@ -101,7 +100,9 @@ impl Context {
         Ok(toml.version)
     }
 
-    fn download_rustup_artifacts(&mut self) -> Result<PathBuf, Error> {
+    fn download_rustup_artifacts(&mut self, sha: &str) -> Result<PathBuf, Error> {
+        println!("Downloading artifacts from dev-static...");
+
         let dl = self.dl_dir().join("dist");
         // Remove the directory if it exists, otherwise just ignore.
         let _ = fs::remove_dir_all(&dl);
@@ -112,7 +113,7 @@ impl Context {
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
-            .arg(&self.s3_artifacts_url("dist/"))
+            .arg(&self.s3_artifacts_url(&format!("builds/{sha}")))
             .arg(format!("{}/", dl.display())))?;
 
         Ok(dl)
