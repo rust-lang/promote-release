@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Error};
+use anyhow::{anyhow, Context as AnyhowContext, Error};
 
 use crate::config::Channel;
 use crate::{run, Context};
@@ -35,6 +35,9 @@ impl Context {
         // Rustup only has beta and stable releases, so we fail fast when trying to promote nightly
         self.enforce_rustup_channel()?;
 
+        // The latest commit on the `stable` branch is used to determine the version number
+        let head_sha = self.get_head_sha_for_rustup()?;
+
         // Download the rustup artifacts from S3
         println!("Downloading artifacts from dev-static...");
         let dist_dir = self.download_rustup_artifacts()?;
@@ -66,6 +69,14 @@ impl Context {
         }
 
         Ok(())
+    }
+
+    fn get_head_sha_for_rustup(&self) -> anyhow::Result<String> {
+        self.config
+            .github()
+            .context("failed to get HEAD SHA from GitHub - credentials not configured")?
+            .token("rust-lang/rustup")?
+            .get_ref("heads/stable")
     }
 
     fn download_rustup_artifacts(&mut self) -> Result<PathBuf, Error> {
