@@ -32,12 +32,8 @@ impl Context {
     /// [release process]: https://rust-lang.github.io/rustup/dev-guide/release-process.html
     /// [rust-lang/rustup]: https://github.com/rust-lang/rustup
     pub fn promote_rustup(&mut self) -> anyhow::Result<()> {
-        println!("Checking channel...");
-        if self.config.channel != Channel::Stable && self.config.channel != Channel::Beta {
-            return Err(anyhow!(
-                "promoting rustup is only supported for the stable and beta channels"
-            ));
-        }
+        // Rustup only has beta and stable releases, so we fail fast when trying to promote nightly
+        self.enforce_rustup_channel()?;
 
         // Download the rustup artifacts from S3
         println!("Downloading artifacts from dev-static...");
@@ -56,6 +52,18 @@ impl Context {
         // Update the release number
         println!("Updating version and manifest...");
         self.update_rustup_release()?;
+
+        Ok(())
+    }
+
+    fn enforce_rustup_channel(&self) -> anyhow::Result<()> {
+        println!("Checking channel...");
+
+        if self.config.channel != Channel::Stable && self.config.channel != Channel::Beta {
+            return Err(anyhow!(
+                "promoting rustup is only supported for the stable and beta channels"
+            ));
+        }
 
         Ok(())
     }
