@@ -44,18 +44,15 @@ impl Context {
         let dist_dir = self.download_rustup_artifacts(&head_sha)?;
 
         // Archive the artifacts
-        println!("Archiving artifacts...");
-        self.archive_rustup_artifacts(&dist_dir)?;
+        self.archive_rustup_artifacts(&dist_dir, &version)?;
 
         if self.config.channel == Channel::Stable {
             // Promote the artifacts to the release bucket
-            println!("Promoting artifacts to dist/...");
             self.promote_rustup_artifacts(&dist_dir)?;
         }
 
         // Update the release number
-        println!("Updating version and manifest...");
-        self.update_rustup_release()?;
+        self.update_rustup_release(&version)?;
 
         Ok(())
     }
@@ -119,11 +116,8 @@ impl Context {
         Ok(dl)
     }
 
-    fn archive_rustup_artifacts(&mut self, dist_dir: &Path) -> Result<(), Error> {
-        let version = self
-            .current_version
-            .as_ref()
-            .ok_or_else(|| anyhow!("failed to get current version for rustup release"))?;
+    fn archive_rustup_artifacts(&mut self, dist_dir: &Path, version: &str) -> Result<(), Error> {
+        println!("Archiving artifacts for version {version}...");
 
         let path = format!("archive/{}/", version);
 
@@ -131,6 +125,8 @@ impl Context {
     }
 
     fn promote_rustup_artifacts(&mut self, dist_dir: &Path) -> Result<(), Error> {
+        println!("Promoting artifacts to dist/...");
+
         let release_bucket_url = format!(
             "s3://{}/{}/{}",
             self.config.upload_bucket,
@@ -157,11 +153,8 @@ impl Context {
             .arg(&self.s3_artifacts_url(target_path)))
     }
 
-    fn update_rustup_release(&mut self) -> Result<(), Error> {
-        let version = self
-            .current_version
-            .as_ref()
-            .ok_or_else(|| anyhow!("failed to get current version for rustup release"))?;
+    fn update_rustup_release(&mut self, version: &str) -> Result<(), Error> {
+        println!("Updating version and manifest...");
 
         let manifest_path = self.dl_dir().join("release-stable.toml");
         let manifest = format!(
