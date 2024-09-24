@@ -77,9 +77,9 @@ cat <<EOF
 
 To start the release process locally, run either:
 
-    ./run.sh nightly
-    ./run.sh beta
-    ./run.sh stable
+    ./run.sh release nightly
+    ./run.sh release beta
+    ./run.sh release stable
 
 To use a release produced locally, set this environment variable when
 interacting with rustup:

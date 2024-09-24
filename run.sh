@@ -5,12 +5,28 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-if [[ "$#" -lt 1 ]] || [[ "$#" -gt 2 ]]; then
-    echo "Usage: $0 <channel> [commit]"
-    exit 1
+if [[ "$#" -lt 1 ]]; then
+  echo "Usage: $0 <release|rustup>"
+  exit 1
 fi
-channel="$1"
-override_commit="${2-}"
+command="$1"
+
+if [[ "${command}" == "release" ]]; then
+  if [[ "$#" -lt 2 ]] || [[ "$#" -gt 3 ]]; then
+    echo "Usage: $0 release <stable|dev|nightly> [commit]"
+    exit 1
+  fi
+fi
+
+if [[ "${command}" == "rustup" ]]; then
+  if [[ "$#" -ne 2 ]]; then
+    echo "Usage: $0 rustup <stable|dev> [commit]"
+    exit 1
+  fi
+fi
+
+channel="$2"
+override_commit="${3-}"
 
 container_id="$(docker-compose ps -q local)"
 if [[ "${container_id}" == "" ]]; then
@@ -31,4 +47,4 @@ fi
 cargo build --release
 
 # Run the command inside the docker environment.
-docker-compose exec -T local /src/local/run.sh "${channel}" "${override_commit}"
+docker-compose exec -T local "/src/local/${command}.sh" "${channel}" "${override_commit}"
