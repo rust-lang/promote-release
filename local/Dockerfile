@@ -16,13 +16,15 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     git \
     gnupg \
     jq \
+    libssl-dev \
+    openssl \
+    pkg-config \
     python3 \
     socat
 
 # Install rustup while removing the pre-installed stable toolchain.
-RUN curl https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init >/tmp/rustup-init && \
-    chmod +x /tmp/rustup-init && \
-    /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain stable && \
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable && \
     /root/.cargo/bin/rustup toolchain remove stable
 ENV PATH=/root/.cargo/bin:$PATH
 

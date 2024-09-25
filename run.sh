@@ -43,8 +43,10 @@ if [[ "${container_status}" != "running" ]]; then
     exit 1
 fi
 
-# Ensure the release build is done
-cargo build --release
+# Pre-built the binary if the host and Docker environments match
+if [[ "$(uname)" == "Linux" ]]; then
+    cargo build --release
+fi
 
 # Run the command inside the docker environment.
 docker-compose exec -T local "/src/local/${command}.sh" "${channel}" "${override_commit}"
