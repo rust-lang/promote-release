@@ -62,3 +62,37 @@ if [[ ! -f "/src/target/release/promote-release" ]]; then
     cargo build --release
     cd ..
 fi
+
+echo "==> configuring the environment"
+
+# Release Rustup
+export PROMOTE_RELEASE_ACTION="promote-rustup"
+
+# Point to the right GnuPG environment
+export GNUPGHOME=/persistent/gpg-home
+
+## Environment variables also used in prod releases
+export AWS_ACCESS_KEY_ID="access_key"
+export AWS_SECRET_ACCESS_KEY="secret_key"
+export PROMOTE_RELEASE_CHANNEL="${channel}"
+export PROMOTE_RELEASE_CLOUDFRONT_DOC_ID=""
+export PROMOTE_RELEASE_CLOUDFRONT_STATIC_ID=""
+export PROMOTE_RELEASE_DOWNLOAD_BUCKET="rustup-builds"
+export PROMOTE_RELEASE_DOWNLOAD_DIR="builds"
+export PROMOTE_RELEASE_GPG_KEY_FILE=""
+export PROMOTE_RELEASE_GPG_PASSWORD_FILE=""
+export PROMOTE_RELEASE_UPLOAD_ADDR=""
+export PROMOTE_RELEASE_UPLOAD_BUCKET="static"
+export PROMOTE_RELEASE_UPLOAD_STORAGE_CLASS="STANDARD"
+export PROMOTE_RELEASE_UPLOAD_DIR="rustup"
+
+## Environment variables used only by local releases
+export PROMOTE_RELEASE_S3_ENDPOINT_URL="http://minio:9000"
+
+# Conditional environment variables
+if [[ "${override_commit}" != "" ]]; then
+   export PROMOTE_RELEASE_OVERRIDE_COMMIT="${override_commit}"
+fi
+
+echo "==> starting promote-release"
+/src/target/release/promote-release /persistent/release "${channel}"
