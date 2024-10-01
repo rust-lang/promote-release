@@ -78,7 +78,7 @@ jobs:
         if: github.event_name == 'push' && github.repository == 'rust-lang/promote-release' && github.ref == 'refs/heads/master'
 
       - name: Upload the Docker image we built to GitHub Actions artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: docker-image
           path: promote-release.tar.zstd
