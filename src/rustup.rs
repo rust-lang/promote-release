@@ -1,10 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context as AnyhowContext, Error};
+use anyhow::{anyhow, Error};
+use curl::easy::Easy;
 use serde::Deserialize;
 
 use crate::config::Channel;
+use crate::curl_helper::BodyExt;
 use crate::{run, Context};
 
 impl Context {
@@ -79,31 +81,57 @@ impl Context {
     }
 
     fn get_head_sha_for_rustup(&self) -> anyhow::Result<String> {
-        self.config
-            .github()
-            .context("failed to get HEAD SHA from GitHub - credentials not configured")?
-            .token("rust-lang/rustup")?
-            .get_ref("heads/stable")
+        #[derive(Deserialize)]
+        struct Commit {
+            sha: String,
+        }
+
+        let url = format!(
+            "https://api.github.com/repos/rust-lang/rustup/commits/{}",
+            self.config.channel
+        );
+
+        let mut client = Easy::new();
+        client.url(&url)?;
+        client.useragent("rust-lang/promote-release")?;
+
+        let commit: Commit = client.without_body().send_with_response()?;
+
+        Ok(commit.sha)
     }
 
     fn get_next_rustup_version(&self, sha: &str) -> anyhow::Result<String> {
         println!("Getting next Rustup version from Cargo.toml...");
 
-        #[derive(Debug, Deserialize)]
+        #[derive(Deserialize)]
+        struct Content {
+            content: String,
+        }
+
+        #[derive(Deserialize)]
         struct CargoToml {
+            package: Package,
+        }
+
+        #[derive(Deserialize)]
+        struct Package {
             version: String,
         }
 
-        let cargo_toml = self
-            .config
-            .github()
-            .context("failed to get new rustup version from GitHub - credentials not configured")?
-            .token("rust-lang/rustup")?
-            .read_file(Some(sha), "Cargo.toml")?;
+        let url =
+            format!("https://api.github.com/repos/rust-lang/rustup/contents/Cargo.toml?ref={sha}");
 
-        let toml: CargoToml = toml::from_str(&cargo_toml.content()?)?;
+        let mut client = Easy::new();
+        client.url(&url)?;
+        client.useragent("rust-lang/promote-release")?;
 
-        Ok(toml.version)
+        let content: Content = client.without_body().send_with_response()?;
+        let decoded_content = base64::decode(&content.content.replace('\n', ""))?;
+        let cargo_toml = String::from_utf8(decoded_content)?;
+
+        let toml: CargoToml = toml::from_str(&cargo_toml)?;
+
+        Ok(toml.package.version)
     }
 
     fn download_rustup_artifacts(&mut self, sha: &str) -> Result<PathBuf, Error> {
