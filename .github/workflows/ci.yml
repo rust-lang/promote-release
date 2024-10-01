@@ -1,5 +1,4 @@
 ---
-
 name: CI
 on:
   push:
@@ -29,7 +28,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  local:
+  release:
     name: Local release
     runs-on: ubuntu-latest
 
@@ -49,7 +48,7 @@ jobs:
         run: docker-compose up -d
 
       - name: Run the local release process for channel ${{ matrix.channel }}
-        run: ./run.sh ${{ matrix.channel }}
+        run: ./run.sh release ${{ matrix.channel }}
 
       - name: Validate the generated signatures
         run: docker-compose exec -T local /src/local/check-signature.sh ${{ matrix.channel }}
@@ -61,6 +60,33 @@ jobs:
         run: rustup toolchain install ${{ matrix.channel }} --profile=minimal
         env:
           RUSTUP_DIST_SERVER: http://localhost:9000/static
+
+  rustup:
+    name: Local rustup
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, beta]
+
+    steps:
+      - name: Clone the source code
+        uses: actions/checkout@v3
+
+      - name: Ensure Rust Stable is up to date
+        run: rustup self update && rustup update stable
+
+      - name: Start the local environment
+        run: docker-compose up -d
+
+      - name: Run the local release process for channel ${{ matrix.channel }}
+        run: ./run.sh rustup ${{ matrix.channel }}
+
+      - name: Update Rustup from the local environment
+        run: rustup self update
+        env:
+          RUSTUP_UPDATE_ROOT: http://localhost:9000/static/rustup
 
   docker:
     name: Build Docker image
