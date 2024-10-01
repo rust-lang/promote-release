@@ -1,5 +1,4 @@
 ---
-
 name: CI
 on:
   push:
@@ -46,13 +45,13 @@ jobs:
         run: rustup self update && rustup update stable
 
       - name: Start the local environment
-        run: docker-compose up -d
+        run: docker compose up -d
 
       - name: Run the local release process for channel ${{ matrix.channel }}
         run: ./run.sh ${{ matrix.channel }}
 
       - name: Validate the generated signatures
-        run: docker-compose exec -T local /src/local/check-signature.sh ${{ matrix.channel }}
+        run: docker compose exec -T local /src/local/check-signature.sh ${{ matrix.channel }}
 
       - name: Remove the previously installed ${{ matrix.channel }} toolchain
         run: rustup toolchain remove ${{ matrix.channel }}
