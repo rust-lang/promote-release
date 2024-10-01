@@ -36,8 +36,10 @@ impl Context {
         // Rustup only has beta and stable releases, so we fail fast when trying to promote nightly
         self.enforce_rustup_channel()?;
 
-        // The latest commit on the `stable` branch is used to determine the version number
-        let head_sha = self.get_head_sha_for_rustup()?;
+        // Get the latest commit from the `stable` branch or use the user-provided override
+        let head_sha = self.get_commit_sha_for_rustup_release()?;
+
+        // The commit on the `stable` branch is used to determine the version number
         let version = self.get_next_rustup_version(&head_sha)?;
 
         // Download the Rustup artifacts from S3
@@ -67,6 +69,13 @@ impl Context {
         }
 
         Ok(())
+    }
+
+    fn get_commit_sha_for_rustup_release(&self) -> anyhow::Result<String> {
+        match &self.config.override_commit {
+            Some(sha) => Ok(sha.clone()),
+            None => self.get_head_sha_for_rustup(),
+        }
     }
 
     fn get_head_sha_for_rustup(&self) -> anyhow::Result<String> {
