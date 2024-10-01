@@ -212,6 +212,9 @@ version = '{}'
             .arg("cp")
             .arg("--only-show-errors")
             .arg(manifest_path)
-            .arg(&self.s3_artifacts_url("release-stable.toml")))
+            .arg(format!(
+                "s3://{}/{}/release-stable.toml",
+                self.config.upload_bucket, self.config.upload_dir
+            )))
     }
 }
