@@ -11,7 +11,7 @@ MINIO_URL="http://${MINIO_HOST}:${MINIO_PORT}"
 MINIO_ACCESS_KEY="access_key"
 MINIO_SECRET_KEY="secret_key"
 
-MINIO_BUCKETS=( "static" "artifacts" )
+MINIO_BUCKETS=( "static" "artifacts" "rustup-builds" )
 
 # Quit immediately when docker-compose receives a Ctrl+C
 trap exit EXIT
