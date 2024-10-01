@@ -54,3 +54,11 @@ for target in "${DOWNLOAD_TARGETS[@]}"; do
         echo "==> reusing cached ${target} target"
     fi
 done
+
+# Build the promote-release binary if it hasn't been pre-built
+if [[ ! -f "/src/target/release/promote-release" ]]; then
+    echo "==> building promote-release"
+    cd /src
+    cargo build --release
+    cd ..
+fi
