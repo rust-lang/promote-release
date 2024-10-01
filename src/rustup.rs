@@ -105,12 +105,14 @@ impl Context {
         let _ = fs::remove_dir_all(&dl);
         fs::create_dir_all(&dl)?;
 
+        let download_path = format!("{}/{}", self.config.download_dir, sha);
+
         run(self
             .aws_s3()
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
-            .arg(&self.s3_artifacts_url(&format!("builds/{sha}")))
+            .arg(&self.s3_artifacts_url(&download_path))
             .arg(format!("{}/", dl.display())))?;
 
         Ok(dl)
