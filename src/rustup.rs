@@ -132,7 +132,7 @@ impl Context {
         let release_bucket_url = format!(
             "s3://{}/{}/{}",
             self.config.upload_bucket,
-            self.config.download_dir,
+            self.config.upload_dir,
             dist_dir.display(),
         );
 
