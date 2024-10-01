@@ -189,7 +189,10 @@ impl Context {
             .arg("--recursive")
             .arg("--only-show-errors")
             .arg(format!("{}/", dist_dir.display()))
-            .arg(&self.s3_artifacts_url(target_path)))
+            .arg(format!(
+                "s3://{}/{}/{}",
+                self.config.upload_bucket, self.config.upload_dir, target_path
+            )))
     }
 
     fn update_rustup_release(&mut self, version: &str) -> Result<(), Error> {
