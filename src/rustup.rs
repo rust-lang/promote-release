@@ -167,10 +167,8 @@ impl Context {
         println!("Promoting artifacts to dist/...");
 
         let release_bucket_url = format!(
-            "s3://{}/{}/{}",
-            self.config.upload_bucket,
-            self.config.upload_dir,
-            dist_dir.display(),
+            "s3://{}/{}/dist/",
+            self.config.upload_bucket, self.config.upload_dir,
         );
 
         run(self
