@@ -378,7 +378,7 @@ impl Context {
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
-            .arg(&self.s3_artifacts_url(&format!("{}/", rev)))
+            .arg(self.s3_artifacts_url(&format!("{}/", rev)))
             .arg(format!("{}/", dl.display())))?;
 
         let mut files = dl.read_dir()?;
