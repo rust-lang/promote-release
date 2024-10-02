@@ -45,13 +45,13 @@ jobs:
         run: rustup self update && rustup update stable
 
       - name: Start the local environment
-        run: docker-compose up -d
+        run: docker compose up -d
 
       - name: Run the local release process for channel ${{ matrix.channel }}
         run: ./run.sh release ${{ matrix.channel }}
 
       - name: Validate the generated signatures
-        run: docker-compose exec -T local /src/local/check-signature.sh ${{ matrix.channel }}
+        run: docker compose exec -T local /src/local/check-signature.sh ${{ matrix.channel }}
 
       - name: Remove the previously installed ${{ matrix.channel }} toolchain
         run: rustup toolchain remove ${{ matrix.channel }}
@@ -78,7 +78,7 @@ jobs:
         run: rustup self update && rustup update stable
 
       - name: Start the local environment
-        run: docker-compose up -d
+        run: docker compose up -d
 
       - name: Run the local release process for channel ${{ matrix.channel }}
         run: ./run.sh rustup ${{ matrix.channel }}
@@ -104,7 +104,7 @@ jobs:
         if: github.event_name == 'push' && github.repository == 'rust-lang/promote-release' && github.ref == 'refs/heads/master'
 
       - name: Upload the Docker image we built to GitHub Actions artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: docker-image
           path: promote-release.tar.zstd
@@ -122,7 +122,7 @@ jobs:
 
     steps:
       - name: Download the Docker image previously built
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: docker-image
 

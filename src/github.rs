@@ -355,51 +355,48 @@ impl RepositoryClient<'_> {
         start: &str,
         path: &str,
     ) -> anyhow::Result<FullCommitData> {
-        self.start_new_request()?;
-        self.client.get(true)?;
-        self.client.url(&format!(
-            "https://api.github.com/repos/{repo}/commits/{start}",
-            repo = self.repo
-        ))?;
-        let resolved_start = self
-            .client
-            .without_body()
-            .send_with_response::<CommitData>()?
-            .sha;
-        for page in 1..20 {
+        const MAX_COMMITS: usize = 200;
+        const BORS_EMAIL: &str = "bors@rust-lang.org";
+
+        let mut commit = start.to_string();
+        let mut scanned_commits = 0;
+        for _ in 0..MAX_COMMITS {
+            scanned_commits += 1;
+
             self.start_new_request()?;
             self.client.get(true)?;
             self.client.url(&format!(
-                "https://api.github.com/repos/{repo}/commits?sha={resolved_start}&per_page=100&page={page}&author=bors",
+                "https://api.github.com/repos/{repo}/commits/{commit}",
                 repo = self.repo
             ))?;
-            let commits = self
+
+            let commit_data = self
                 .client
                 .without_body()
-                .send_with_response::<Vec<CommitData>>()?;
-            for commit in commits {
-                self.start_new_request()?;
-                self.client.get(true)?;
-                self.client.url(&format!(
-                    "https://api.github.com/repos/{repo}/commits/{sha}",
-                    repo = self.repo,
-                    sha = commit.sha,
-                ))?;
-                let commit = self
-                    .client
-                    .without_body()
-                    .send_with_response::<FullCommitData>()?;
-                if commit.files.iter().any(|f| f.filename == path) {
-                    return Ok(commit);
-                }
+                .send_with_response::<FullCommitData>()?;
+
+            // We pick the *first* parent commit to continue walking through the commit graph. In
+            // a merge commit, the first parent is always the merge base (i.e. the master branch),
+            // while the second parent is always the branch being merged in.
+            //
+            // This is important because we only want bors merge commits for branches merged into
+            // Rust's master branch, not bors merge commits in subtrees being pulled in.
+            let Some(parent) = &commit_data.parents.first() else {
+                break;
+            };
+            commit.clone_from(&parent.sha);
+
+            if commit_data.commit.author.email != BORS_EMAIL {
+                continue;
+            }
+            if commit_data.files.iter().any(|f| f.filename == path) {
+                return Ok(commit_data);
             }
         }
 
         anyhow::bail!(
-            "Failed to find bors commit touching {:?} in start={} ancestors (scanned {} commits)",
-            path,
-            start,
-            20 * 100,
+            "Failed to find bors commit touching {path:?} in \
+             start={start} ancestors (scanned {scanned_commits} commits)"
         );
     }
 
@@ -511,15 +508,21 @@ pub(crate) struct CreateTag<'a> {
 
 #[derive(serde::Deserialize)]
 pub(crate) struct FullCommitData {
-    #[allow(unused)]
+    #[cfg_attr(not(test), allow(unused))]
     pub(crate) sha: String,
     pub(crate) parents: Vec<CommitParent>,
+    pub(crate) commit: CommitCommit,
     pub(crate) files: Vec<CommitFile>,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct CommitData {
-    pub(crate) sha: String,
+pub(crate) struct CommitCommit {
+    pub(crate) author: CommitAuthor,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct CommitAuthor {
+    pub(crate) email: String,
 }
 
 #[derive(serde::Deserialize)]

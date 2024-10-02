@@ -28,7 +28,7 @@ fi
 channel="$2"
 override_commit="${3-}"
 
-container_id="$(docker-compose ps -q local)"
+container_id="$(docker compose ps -q local)"
 if [[ "${container_id}" == "" ]]; then
     container_status="missing"
 else
@@ -38,7 +38,7 @@ if [[ "${container_status}" != "running" ]]; then
     echo "Error: the local environment is not running!"
     echo "You can start it by running in a new terminal the following command:"
     echo
-    echo "    docker-compose up"
+    echo "    docker compose up"
     echo
     exit 1
 fi
@@ -49,4 +49,4 @@ if [[ "$(uname)" == "Linux" ]]; then
 fi
 
 # Run the command inside the docker environment.
-docker-compose exec -T local "/src/local/${command}.sh" "${channel}" "${override_commit}"
+docker compose exec -T local "/src/local/${command}.sh" "${channel}" "${override_commit}"
