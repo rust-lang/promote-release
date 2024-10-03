@@ -126,7 +126,7 @@ impl Context {
         client.useragent("rust-lang/promote-release")?;
 
         let content: Content = client.without_body().send_with_response()?;
-        let decoded_content = base64::decode(&content.content.replace('\n', ""))?;
+        let decoded_content = base64::decode(content.content.replace('\n', ""))?;
         let cargo_toml = String::from_utf8(decoded_content)?;
 
         let toml: CargoToml = toml::from_str(&cargo_toml)?;
@@ -149,7 +149,7 @@ impl Context {
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
-            .arg(&self.s3_artifacts_url(&download_path))
+            .arg(self.s3_artifacts_url(&download_path))
             .arg(format!("{}/", dl.display())))?;
 
         Ok(dl)
