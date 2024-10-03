@@ -86,13 +86,8 @@ impl Context {
             sha: String,
         }
 
-        let url = format!(
-            "https://api.github.com/repos/rust-lang/rustup/commits/{}",
-            self.config.channel
-        );
-
         let mut client = Easy::new();
-        client.url(&url)?;
+        client.url("https://api.github.com/repos/rust-lang/rustup/commits/stable")?;
         client.useragent("rust-lang/promote-release")?;
 
         let commit: Commit = client.without_body().send_with_response()?;
