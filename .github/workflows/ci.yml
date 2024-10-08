@@ -65,6 +65,9 @@ jobs:
     name: Local rustup
     runs-on: ubuntu-latest
 
+    env:
+      PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION: 99.0.0
+
     strategy:
       fail-fast: false
       matrix:

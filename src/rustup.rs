@@ -96,6 +96,16 @@ impl Context {
     }
 
     fn get_next_rustup_version(&self, sha: &str) -> anyhow::Result<String> {
+        // Allow the version to be overridden manually, for example to test the release process
+        if let Ok(version) = std::env::var("PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION") {
+            println!("Using override version: {}", version);
+            Ok(version)
+        } else {
+            self.get_next_rustup_version_from_github(sha)
+        }
+    }
+
+    fn get_next_rustup_version_from_github(&self, sha: &str) -> anyhow::Result<String> {
         println!("Getting next Rustup version from Cargo.toml...");
 
         #[derive(Deserialize)]
