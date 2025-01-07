@@ -19,7 +19,7 @@ if [[ "${command}" == "release" ]]; then
 fi
 
 if [[ "${command}" == "rustup" ]]; then
-  if [[ "$#" -ne 2 ]]; then
+  if [[ "$#" -lt 2 ]] || [[ "$#" -gt 3 ]]; then
     echo "Usage: $0 rustup <stable|dev> [commit]"
     exit 1
   fi
@@ -46,6 +46,12 @@ fi
 # Pre-built the binary if the host and Docker environments match
 if [[ "$(uname)" == "Linux" ]]; then
     cargo build --release
+fi
+
+# If the PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION environment variable is set,
+# forward it to the Docker environment.
+if [[ "$PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION" != "" ]]; then
+  docker compose exec -e "PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION=${PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION}" -T local "/src/local/${command}.sh" "${channel}" "${override_commit}"
 fi
 
 # Run the command inside the docker environment.
