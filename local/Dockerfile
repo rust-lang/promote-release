@@ -7,10 +7,9 @@
 # then copy the binary from it later in the build.
 FROM quay.io/minio/mc:RELEASE.2023-04-12T02-21-51Z AS mc
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    awscli \
     build-essential \
     curl \
     git \
@@ -20,7 +19,14 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     openssl \
     pkg-config \
     python3 \
-    socat
+    socat \
+    unzip
+
+# Install the AWS CLI
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(arch).zip" -o "awscliv2.zip"; \
+    unzip awscliv2.zip; \
+    rm awscliv2.zip; \
+    ./aws/install
 
 # Install rustup while removing the pre-installed stable toolchain.
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
