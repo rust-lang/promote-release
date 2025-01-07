@@ -5,6 +5,8 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION=""
+
 if [[ "$#" -lt 1 ]]; then
   echo "Usage: $0 <release|rustup>"
   exit 1
