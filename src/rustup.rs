@@ -9,6 +9,26 @@ use crate::config::Channel;
 use crate::curl_helper::BodyExt;
 use crate::{run, Context};
 
+#[derive(Deserialize)]
+struct Content {
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct CargoToml {
+    workspace: Workspace,
+}
+
+#[derive(Deserialize)]
+struct Workspace {
+    package: Package,
+}
+
+#[derive(Deserialize)]
+struct Package {
+    version: String,
+}
+
 impl Context {
     /// Promote a `rustup` release
     ///
@@ -108,21 +128,6 @@ impl Context {
     fn get_next_rustup_version_from_github(&self, sha: &str) -> anyhow::Result<String> {
         println!("Getting next Rustup version from Cargo.toml...");
 
-        #[derive(Deserialize)]
-        struct Content {
-            content: String,
-        }
-
-        #[derive(Deserialize)]
-        struct CargoToml {
-            package: Package,
-        }
-
-        #[derive(Deserialize)]
-        struct Package {
-            version: String,
-        }
-
         let url =
             format!("https://api.github.com/repos/rust-lang/rustup/contents/Cargo.toml?ref={sha}");
 
@@ -131,12 +136,9 @@ impl Context {
         client.useragent("rust-lang/promote-release")?;
 
         let content: Content = client.without_body().send_with_response()?;
-        let decoded_content = base64::decode(content.content.replace('\n', ""))?;
-        let cargo_toml = String::from_utf8(decoded_content)?;
+        let toml = decode_and_deserialize_cargo_toml(&content.content)?;
 
-        let toml: CargoToml = toml::from_str(&cargo_toml)?;
-
-        Ok(toml.package.version)
+        Ok(toml.workspace.package.version)
     }
 
     fn download_rustup_artifacts(&mut self, sha: &str) -> Result<PathBuf, Error> {
@@ -221,5 +223,31 @@ version = '{}'
                 "s3://{}/{}/release-stable.toml",
                 self.config.upload_bucket, self.config.upload_dir
             )))
+    }
+}
+
+fn decode_and_deserialize_cargo_toml(base64_encoded_toml: &str) -> Result<CargoToml, Error> {
+    let decoded_content = base64::decode(base64_encoded_toml.replace('\n', ""))?;
+    let content_as_string = String::from_utf8(decoded_content)?;
+
+    toml::from_str(&content_as_string).map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::rustup::decode_and_deserialize_cargo_toml;
+
+    #[test]
+    fn decode_cargo_toml() {
+        let base64_encoded_toml = base64::encode(
+            r#"
+            [workspace.package]
+            version = "1.2.3"
+        "#,
+        );
+
+        let toml = decode_and_deserialize_cargo_toml(&base64_encoded_toml).unwrap();
+
+        assert_eq!(toml.workspace.package.version, "1.2.3");
     }
 }
