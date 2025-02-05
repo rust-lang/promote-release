@@ -42,8 +42,8 @@ else
 fi
 
 for target in "${DOWNLOAD_TARGETS[@]}"; do
-    if ! mc stat "local/artifacts/builds/${commit}/dist/${target}" >/dev/null 2>&1; then
-        echo "==> copying ${target} from S3"
+  if ! mc stat "local/artifacts/builds/${commit}/dist/${target}" >/dev/null 2>&1; then
+    echo "==> copying ${target} from S3"
 
         for file in "${DOWNLOAD_FILES[@]}"; do
             if curl -Lo /tmp/component "${DOWNLOAD_BASE}/${commit}/dist/${target}/${file}" --fail; then
@@ -92,6 +92,11 @@ export PROMOTE_RELEASE_S3_ENDPOINT_URL="http://minio:9000"
 # Conditional environment variables
 if [[ "${override_commit}" != "" ]]; then
    export PROMOTE_RELEASE_OVERRIDE_COMMIT="${override_commit}"
+fi
+
+# Conditionally set a version for the next Rustup release
+if [[ "${RUSTUP_OVERRIDE_VERSION:-}" != "" ]]; then
+  export PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION="${RUSTUP_OVERRIDE_VERSION}"
 fi
 
 echo "==> starting promote-release"

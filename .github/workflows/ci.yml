@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - master
-  pull_request: {}
+  pull_request: { }
 
 jobs:
   test:
@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        channel: [stable, beta, nightly]
+        channel: [ stable, beta, nightly ]
 
     steps:
       - name: Clone the source code
@@ -66,12 +66,12 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION: 99.0.0
+      RUSTUP_OVERRIDE_VERSION: 99.0.0
 
     strategy:
       fail-fast: false
       matrix:
-        channel: [stable, beta]
+        channel: [ stable, beta ]
 
     steps:
       - name: Clone the source code
@@ -90,6 +90,9 @@ jobs:
         run: rustup self update
         env:
           RUSTUP_UPDATE_ROOT: http://localhost:9000/static/rustup
+
+      - name: Verify Rustup version
+        run: rustup --version | grep -q ${{ env.RUSTUP_OVERRIDE_VERSION }}
 
   docker:
     name: Build Docker image
@@ -120,7 +123,7 @@ jobs:
     permissions:
       id-token: write
 
-    needs: [test, release, rustup, docker]
+    needs: [ test, release, rustup, docker ]
     if: github.event_name == 'push' && github.repository == 'rust-lang/promote-release' && github.ref == 'refs/heads/master'
 
     steps:
