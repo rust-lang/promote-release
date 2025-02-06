@@ -142,21 +142,24 @@ impl Context {
     }
 
     fn download_rustup_artifacts(&mut self, sha: &str) -> Result<PathBuf, Error> {
-        println!("Downloading artifacts from dev-static...");
+        println!(
+            "Downloading artifacts from {}...",
+            self.config.download_bucket
+        );
 
-        let dl = self.dl_dir().join("dist");
+        let dl = self.dl_dir().join("rustup");
         // Remove the directory if it exists, otherwise just ignore.
         let _ = fs::remove_dir_all(&dl);
         fs::create_dir_all(&dl)?;
 
-        let download_path = format!("{}/{}", self.config.download_dir, sha);
+        let artifacts_url = format!("s3://{}/{}", self.config.download_bucket, sha);
 
         run(self
             .aws_s3()
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
-            .arg(self.s3_artifacts_url(&download_path))
+            .arg(artifacts_url)
             .arg(format!("{}/", dl.display())))?;
 
         Ok(dl)

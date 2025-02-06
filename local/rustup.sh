@@ -8,7 +8,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 RUSTUP_REPO="https://github.com/rust-lang/rustup"
-RUSTUP_DEFAULT_BRANCH="master"
+RUSTUP_DEFAULT_BRANCH="stable"
 
 # S3 bucket from which to download the Rustup artifacts
 S3_BUCKET="rustup-builds"
@@ -19,6 +19,7 @@ DOWNLOAD_BASE="https://rustup-builds.rust-lang.org"
 # The artifacts for the following targets will be downloaded and copied during
 # the release process. At least one target is required.
 DOWNLOAD_TARGETS=(
+    "aarch64-unknown-linux-gnu"
     "x86_64-unknown-linux-gnu"
 )
 
@@ -42,12 +43,14 @@ else
 fi
 
 for target in "${DOWNLOAD_TARGETS[@]}"; do
-  if ! mc stat "local/artifacts/builds/${commit}/dist/${target}" >/dev/null 2>&1; then
+  if ! mc stat "local/rustup-builds/${commit}/dist/${target}" >/dev/null 2>&1; then
     echo "==> copying ${target} from S3"
 
         for file in "${DOWNLOAD_FILES[@]}"; do
+            echo "==> copying ${file} from S3"
+
             if curl -Lo /tmp/component "${DOWNLOAD_BASE}/${commit}/dist/${target}/${file}" --fail; then
-                mc cp /tmp/component "local/artifacts/builds/${commit}/dist/${target}/${file}" >/dev/null
+                mc cp /tmp/component "local/rustup-builds/${commit}/dist/${target}/${file}" >/dev/null
             fi
         done
     else
@@ -78,7 +81,7 @@ export PROMOTE_RELEASE_CHANNEL="${channel}"
 export PROMOTE_RELEASE_CLOUDFRONT_DOC_ID=""
 export PROMOTE_RELEASE_CLOUDFRONT_STATIC_ID=""
 export PROMOTE_RELEASE_DOWNLOAD_BUCKET="rustup-builds"
-export PROMOTE_RELEASE_DOWNLOAD_DIR="builds"
+export PROMOTE_RELEASE_DOWNLOAD_DIR=""
 export PROMOTE_RELEASE_GPG_KEY_FILE=""
 export PROMOTE_RELEASE_GPG_PASSWORD_FILE=""
 export PROMOTE_RELEASE_UPLOAD_ADDR=""
