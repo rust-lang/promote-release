@@ -30,8 +30,7 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(arch).zip" -o "awscliv
 
 # Install rustup while removing the pre-installed stable toolchain.
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-    sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable && \
-    /root/.cargo/bin/rustup toolchain remove stable
+    sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable
 ENV PATH=/root/.cargo/bin:$PATH
 
 COPY --from=mc /usr/bin/mc /usr/local/bin/mc
