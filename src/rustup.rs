@@ -170,7 +170,7 @@ impl Context {
 
         let path = format!("archive/{}/", version);
 
-        self.upload_rustup_artifacts(dist_dir, &path)
+        self.upload_rustup_artifacts(&dist_dir.join("dist"), &path)
     }
 
     fn promote_rustup_artifacts(&mut self, dist_dir: &Path) -> Result<(), Error> {
