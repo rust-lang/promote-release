@@ -45,9 +45,8 @@ impl Context {
     /// derived from the Cargo.toml file in the `stable` branch. `UPLOAD_BUCKET` can either be the
     /// `dev-static` or the `static` bucket.
     ///
-    /// If the release is for the `stable` channel, the artifacts are also copied to the `dist/`
-    /// path in the `UPLOAD_BUCKET` bucket. The `dist/` path is used by the `rustup` installer to
-    /// download the latest release.
+    /// The artifacts are also copied to the `dist/` path in the `UPLOAD_BUCKET` bucket, which is
+    /// used by the `rustup` installer to download the latest release.
     ///
     /// Then, the `release-stable.toml` manifest is updated with the new version and copied to
     /// `s3://${UPLOAD_BUCKET}/rustup/release-stable.toml`.
@@ -70,10 +69,8 @@ impl Context {
         // Archive the artifacts
         self.archive_rustup_artifacts(&dist_dir, &version)?;
 
-        if self.config.channel == Channel::Stable {
-            // Promote the artifacts to the release bucket
-            self.promote_rustup_artifacts(&dist_dir)?;
-        }
+        // Promote the artifacts to the release bucket
+        self.promote_rustup_artifacts(&dist_dir)?;
 
         // Update the release number
         self.update_rustup_release(&version)?;
