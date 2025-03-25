@@ -72,6 +72,9 @@ impl Context {
         // Promote the artifacts to the release bucket
         self.promote_rustup_artifacts(&dist_dir)?;
 
+        // Update the `rustup` installer
+        self.update_rustup_installer(&dist_dir)?;
+
         // Update the release number
         self.update_rustup_release(&version)?;
 
@@ -185,6 +188,28 @@ impl Context {
             .arg("--only-show-errors")
             .arg(format!("{}/dist/", dist_dir.display()))
             .arg(&release_bucket_url))
+    }
+
+    fn update_rustup_installer(&mut self, dist_dir: &Path) -> Result<(), Error> {
+        println!("Updating the rustup installer...");
+
+        let release_bucket_url = format!(
+            "s3://{}/{}",
+            self.config.upload_bucket, self.config.upload_dir,
+        );
+
+        let destinations = ["rustup-init.sh", "rustup.sh"];
+
+        for destination in destinations {
+            run(self
+                .aws_s3()
+                .arg("cp")
+                .arg("--only-show-errors")
+                .arg(format!("{}/rustup-init.sh", dist_dir.display()))
+                .arg(format!("{}/{}", release_bucket_url, destination)))?;
+        }
+
+        Ok(())
     }
 
     fn upload_rustup_artifacts(&mut self, dist_dir: &Path, target_path: &str) -> Result<(), Error> {

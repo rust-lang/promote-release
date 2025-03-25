@@ -58,6 +58,16 @@ for target in "${DOWNLOAD_TARGETS[@]}"; do
     fi
 done
 
+if ! mc stat "local/rustup-builds/${commit}/rustup-init.sh" >/dev/null 2>&1; then
+    echo "==> copying rustup-init.sh from S3"
+
+    if curl -Lo /tmp/component "${DOWNLOAD_BASE}/${commit}/rustup-init.sh" --fail; then
+        mc cp /tmp/component "local/rustup-builds/${commit}/rustup-init.sh" >/dev/null
+    fi
+else
+    echo "==> reusing cached rustup-init.sh"
+fi
+
 # Build the promote-release binary if it hasn't been pre-built
 if [[ ! -f "/src/target/release/promote-release" ]]; then
     echo "==> building promote-release"
