@@ -183,7 +183,7 @@ impl Context {
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
-            .arg(format!("{}/", dist_dir.display()))
+            .arg(format!("{}/dist/", dist_dir.display()))
             .arg(&release_bucket_url))
     }
 
