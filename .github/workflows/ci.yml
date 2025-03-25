@@ -65,6 +65,9 @@ jobs:
     name: Local rustup
     runs-on: ubuntu-latest
 
+    env:
+      RUSTUP_OVERRIDE_VERSION: 99.0.0
+
     strategy:
       fail-fast: false
       matrix:
@@ -77,9 +80,6 @@ jobs:
       - name: Ensure Rust Stable is up to date
         run: rustup self update && rustup update stable
 
-      - name: Get the current rustup version
-        run: echo "PREVIOUS_RUSTUP_VERSION=$(rustup --version | cut -d ' ' -f 2)" >> $GITHUB_ENV
-
       - name: Start the local environment
         run: docker compose up -d
 
@@ -87,22 +87,15 @@ jobs:
         run: ./run.sh rustup ${{ matrix.channel }}
 
       - name: Update Rustup from the local environment
-        run: rustup self update
+        run: |
+          if rustup self update | grep -q "rustup updated"; then
+            echo "Rustup was updated successfully."
+          else
+            echo "Rustup was not updated."
+            exit 1
+          fi
         env:
           RUSTUP_UPDATE_ROOT: http://localhost:9000/static/rustup
-
-      - name: Get the new rustup version
-        run: echo "NEW_RUSTUP_VERSION=$(rustup --version | cut -d ' ' -f 2)" >> $GITHUB_ENV
-
-      - name: Verify Rustup version
-        run: |
-          if [[ "${PREVIOUS_RUSTUP_VERSION}" == "${NEW_RUSTUP_VERSION}" ]]; then
-            echo "Rustup version did not change"
-            exit 1
-          else
-            echo "Previous Rustup version: ${PREVIOUS_RUSTUP_VERSION}"
-            echo "New Rustup version: ${NEW_RUSTUP_VERSION}"
-          fi
 
   docker:
     name: Build Docker image

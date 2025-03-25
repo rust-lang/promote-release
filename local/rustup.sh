@@ -107,5 +107,10 @@ if [[ "${override_commit}" != "" ]]; then
    export PROMOTE_RELEASE_OVERRIDE_COMMIT="${override_commit}"
 fi
 
+# Conditionally set a version for the next Rustup release
+if [[ "${RUSTUP_OVERRIDE_VERSION:-}" != "" ]]; then
+  export PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION="${RUSTUP_OVERRIDE_VERSION}"
+fi
+
 echo "==> starting promote-release"
 /src/target/release/promote-release /persistent/release "${channel}"
