@@ -61,7 +61,7 @@ impl Context {
         let head_sha = self.get_commit_sha_for_rustup_release()?;
 
         // The commit on the `stable` branch is used to determine the version number
-        let version = self.get_next_rustup_version(&head_sha)?;
+        let version = self.get_next_rustup_version_from_github(&head_sha)?;
 
         // Download the Rustup artifacts from S3
         let dist_dir = self.download_rustup_artifacts(&head_sha)?;
@@ -113,16 +113,6 @@ impl Context {
         let commit: Commit = client.without_body().send_with_response()?;
 
         Ok(commit.sha)
-    }
-
-    fn get_next_rustup_version(&self, sha: &str) -> anyhow::Result<String> {
-        // Allow the version to be overridden manually, for example to test the release process
-        if let Ok(version) = std::env::var("PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION") {
-            println!("Using override version: {}", version);
-            Ok(version)
-        } else {
-            self.get_next_rustup_version_from_github(sha)
-        }
     }
 
     fn get_next_rustup_version_from_github(&self, sha: &str) -> anyhow::Result<String> {
