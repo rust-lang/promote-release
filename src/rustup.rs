@@ -78,6 +78,9 @@ impl Context {
         // Update the release number
         self.update_rustup_release(&version)?;
 
+        // Invalidate the CDN caches
+        self.invalidate_rustup()?;
+
         Ok(())
     }
 
@@ -248,6 +251,22 @@ version = '{}'
                 "s3://{}/{}/release-stable.toml",
                 self.config.upload_bucket, self.config.upload_dir
             )))
+    }
+
+    fn invalidate_rustup(&mut self) -> Result<(), Error> {
+        println!("Invalidating CDN caches...");
+
+        let paths = [
+            self.config.upload_dir.clone(),
+            "rustup-init.sh".into(),
+            "rustup.sh".into(),
+            "rustup/release-stable.toml".into(),
+        ];
+
+        self.invalidate_cloudfront(&self.config.cloudfront_static_id, &paths)?;
+        self.invalidate_fastly(&paths)?;
+
+        Ok(())
     }
 }
 
