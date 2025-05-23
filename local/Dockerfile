@@ -7,17 +7,22 @@
 # then copy the binary from it later in the build.
 FROM quay.io/minio/mc:RELEASE.2023-04-12T02-21-51Z AS mc
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    awscli \
     build-essential \
     curl \
     git \
     gnupg \
     jq \
     python3 \
+    unzip \
     socat
+
+# Install awscli
+RUN curl --fail "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install
 
 # Install rustup while removing the pre-installed stable toolchain.
 RUN curl https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init >/tmp/rustup-init && \
