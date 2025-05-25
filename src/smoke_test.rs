@@ -115,7 +115,7 @@ impl SmokeTester {
 }
 
 fn server_handler(req: Request<Body>, paths: Arc<Vec<PathBuf>>) -> Result<Response<Body>, Error> {
-    let file_name = match req.uri().path().split('/').last() {
+    let file_name = match req.uri().path().split('/').next_back() {
         Some(file_name) => file_name,
         None => return not_found(),
     };

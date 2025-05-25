@@ -137,7 +137,12 @@ impl Context {
 
         // If the previously released version is the same rev, then there's
         // nothing for us to do, nothing has changed.
-        if !self.config.bypass_startup_checks && previous_version.contains(&rev[..7]) {
+        // For nightly, we want to release every night, even if it's the same as the previous one,
+        // to make it easier for people and tools to use.
+        if !self.config.bypass_startup_checks
+            && self.config.channel != Channel::Nightly
+            && previous_version.contains(&rev[..7])
+        {
             println!("found rev in previous version, skipping");
             println!("set PROMOTE_RELEASE_BYPASS_STARTUP_CHECKS=1 to bypass the check");
             return Ok(());
