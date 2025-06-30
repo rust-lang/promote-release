@@ -12,9 +12,9 @@ mod sign;
 mod smoke_test;
 
 use std::fs::{self, File, OpenOptions};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 use std::{collections::HashSet, env};
 
@@ -27,6 +27,10 @@ use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
 use github::{CreateTag, Github};
+use rand::prelude::Distribution;
+use rand::thread_rng;
+use serde::Deserialize;
+use tempfile::NamedTempFile;
 
 const TARGET: &str = env!("TARGET");
 
@@ -253,6 +257,7 @@ impl Context {
         self.publish_release()?;
 
         self.invalidate_releases()?;
+        self.update_manifests_txt()?;
 
         // Clean up after ourselves to avoid leaving gigabytes of artifacts
         // around.
@@ -450,7 +455,8 @@ impl Context {
             .arg("--storage-class")
             .arg(&self.config.storage_class)
             .arg(format!("{}/", self.dl_dir().display()))
-            .arg(&dst))
+            .arg(&dst))?;
+        Ok(())
     }
 
     fn publish_docs(&mut self) -> Result<(), Error> {
@@ -582,7 +588,8 @@ impl Context {
             .arg("--storage-class")
             .arg(&self.config.storage_class)
             .arg(format!("{}/", self.dl_dir().display()))
-            .arg(&dst))
+            .arg(&dst))?;
+        Ok(())
     }
 
     fn invalidate_releases(&self) -> Result<(), Error> {
@@ -650,6 +657,81 @@ impl Context {
         for path in paths {
             fastly.purge(path)?;
         }
+
+        Ok(())
+    }
+
+    fn update_manifests_txt(&self) -> Result<(), Error> {
+        // Updating the manifests.txt file can fail if another release process is modifying it at
+        // the same time. Retry the update multiple times with a randomized delay to avoid stepping
+        // on the other release processes's toes.
+        let mut attempts = 0;
+        loop {
+            match self.attempt_update_manifests_txt() {
+                Ok(()) => break,
+                Err(err) if attempts > 20 => return Err(err),
+                Err(_) => {
+                    eprintln!("warning: failed to update manifests.txt, retrying...");
+                    attempts += 1;
+
+                    let delay = rand::distributions::Uniform::new(1, 10).sample(&mut thread_rng());
+                    std::thread::sleep(Duration::from_secs(delay));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn attempt_update_manifests_txt(&self) -> Result<(), Error> {
+        #[derive(Deserialize)]
+        struct GetResult {
+            #[serde(rename = "ETag")]
+            etag: String,
+        }
+
+        let mut manifest = NamedTempFile::new()?;
+        let get = run(self
+            .aws_s3api()
+            .arg("get-object")
+            .args(["--bucket", &self.config.upload_bucket])
+            .args(["--key", "manifests.txt"])
+            .arg(manifest.path())
+            .stdout(Stdio::piped())
+            // Ignore stderr, as it might include a "not found" error if the file is not present.
+            // That error is being handled below by uploading a brand new file, so showing it in
+            // the logs is just confusing noise. Any authentication/permission error will be
+            // encountered at the upload stage anyway.
+            .stderr(Stdio::null()));
+        let if_none_match = match get {
+            Ok(output) => serde_json::from_slice::<GetResult>(&output.stdout)?.etag,
+            // If the GET failed assume the file doesn't exist, and we need to upload a new one.
+            // Setting the If-None-Match header to * will fail the request if the file exists.
+            Err(_) => "*".to_string(),
+        };
+
+        let upload_addr = self
+            .config
+            .upload_addr
+            .trim_start_matches("https://")
+            .trim_start_matches("http://");
+        manifest.write_all(
+            format!(
+                "{}/{}/{}/channel-rust-{}.toml\n",
+                upload_addr, self.config.upload_dir, self.date, self.config.channel
+            )
+            .as_bytes(),
+        )?;
+
+        run(self
+            .aws_s3api()
+            .arg("put-object")
+            .arg("--body")
+            .arg(manifest.path())
+            .args(["--bucket", &self.config.upload_bucket])
+            .args(["--key", "manifests.txt"])
+            // Fail the request if the manifest was already modified by something else (for
+            // example, another release running in parallel).
+            .args(["--if-none-match", &if_none_match]))?;
 
         Ok(())
     }
@@ -881,6 +963,19 @@ impl Context {
         cmd
     }
 
+    fn aws_s3api(&self) -> Command {
+        let mut cmd = Command::new("aws");
+
+        // Allow using non-S3 backends with the AWS CLI.
+        if let Some(url) = &self.config.s3_endpoint_url {
+            cmd.arg("--endpoint-url");
+            cmd.arg(url);
+        }
+
+        cmd.arg("s3api");
+        cmd
+    }
+
     fn download_top_level_manifest(&mut self) -> Result<toml::Value, Error> {
         let url = format!(
             "{}/{}/channel-rust-{}.toml",
@@ -926,11 +1021,11 @@ impl Context {
     }
 }
 
-fn run(cmd: &mut Command) -> Result<(), Error> {
+fn run(cmd: &mut Command) -> Result<Output, Error> {
     println!("running {:?}", cmd);
-    let status = cmd.status()?;
-    if !status.success() {
-        anyhow::bail!("failed command:{:?}\n:{}", cmd, status);
+    let result = cmd.spawn()?.wait_with_output()?;
+    if !result.status.success() {
+        anyhow::bail!("failed command:{:?}\n:{}", cmd, result.status);
     }
-    Ok(())
+    Ok(result)
 }
