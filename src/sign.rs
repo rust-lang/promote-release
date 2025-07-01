@@ -111,7 +111,7 @@ impl Signer {
 
         std::fs::write(
             add_suffix(path, ".sha256"),
-            format!("{}  {}\n", sha256, file_name),
+            format!("{sha256}  {file_name}\n"),
         )?;
 
         Ok(())
@@ -162,7 +162,7 @@ impl Signer {
         // git to avoid a dependency on the ~global gpg home directory's signing
         // keys (and potential need to enter the signing key password). This
         // also lets us more tightly control what we're signing.
-        let mut message = format!("{}\n", message);
+        let mut message = format!("{message}\n");
         let mut payload = format!("object {commit}\ntype commit\ntag {tag}\n");
         let timestamp = now.timestamp();
         write!(

@@ -79,7 +79,7 @@ impl SmokeTester {
         let cargo = |args: &[&str]| {
             crate::run(
                 Command::new("cargo")
-                    .arg(format!("+{}", channel))
+                    .arg(format!("+{channel}"))
                     .args(args)
                     .env("USER", "root")
                     .current_dir(&cargo_dir),
