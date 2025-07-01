@@ -137,7 +137,7 @@ impl Context {
         let previous_version = manifest["pkg"]["rust"]["version"]
             .as_str()
             .expect("rust version not a string");
-        println!("previous version: {}", previous_version);
+        println!("previous version: {previous_version}");
 
         // If the previously released version is the same rev, then there's
         // nothing for us to do, nothing has changed.
@@ -283,7 +283,7 @@ impl Context {
             if !(filter(&filename) && filename.ends_with(".tar.xz")) {
                 continue;
             }
-            println!("looking inside {} for a version", filename);
+            println!("looking inside {filename} for a version");
 
             let file = File::open(e.path())?;
             let reader = xz2::read::XzDecoder::new(file);
@@ -319,12 +319,12 @@ impl Context {
         let prev_version = prev.split(' ').next().unwrap();
 
         let current = self.load_version(|filename| filename.starts_with("rustc-"))?;
-        println!("current version: {}", current);
+        println!("current version: {current}");
         let current_rustc = current.split(' ').next().unwrap();
         self.current_version = Some(current_rustc.to_string());
 
         let current_cargo = self.load_version(|filename| filename.starts_with("cargo-"))?;
-        println!("current cargo version: {}", current_cargo);
+        println!("current cargo version: {current_cargo}");
         let current_cargo = current_cargo.split(' ').next().unwrap();
         self.current_cargo_version = Some(current_cargo.to_string());
 
@@ -388,7 +388,7 @@ impl Context {
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
-            .arg(self.s3_artifacts_url(&format!("{}/", rev)))
+            .arg(self.s3_artifacts_url(&format!("{rev}/")))
             .arg(format!("{}/", dl.display())))?;
 
         let mut files = dl.read_dir()?;
@@ -477,9 +477,9 @@ impl Context {
         let target = "x86_64-unknown-linux-gnu";
 
         // Unpack the regular documentation tarball.
-        let tarball_prefix = format!("rust-docs-{}-{}", version, target);
+        let tarball_prefix = format!("rust-docs-{version}-{target}");
         let tarball = format!("{}.tar.gz", self.dl_dir().join(&tarball_prefix).display());
-        let tarball_dir = format!("{}/rust-docs/share/doc/rust/html", tarball_prefix);
+        let tarball_dir = format!("{tarball_prefix}/rust-docs/share/doc/rust/html");
 
         // The `m` flag touches all extracted files, therefore setting their modification time
         // to the current date. This will cause the sync to overwrite all remote files with the
@@ -492,7 +492,7 @@ impl Context {
             .current_dir(&docs))?;
 
         // Construct path to rustc documentation.
-        let tarball_prefix = format!("rustc-docs-{}-{}", version, target);
+        let tarball_prefix = format!("rustc-docs-{version}-{target}");
         let tarball = format!("{}.tar.gz", self.dl_dir().join(&tarball_prefix).display());
 
         // Only create and unpack rustc docs if artefacts include tarball.
@@ -501,8 +501,8 @@ impl Context {
             fs::create_dir_all(&rustc_docs)?;
 
             // Construct the path that contains the documentation inside the tarball.
-            let tarball_dir = format!("{}/rustc-docs/share/doc/rust/html", tarball_prefix);
-            let tarball_dir_new = format!("{}/rustc", tarball_dir);
+            let tarball_dir = format!("{tarball_prefix}/rustc-docs/share/doc/rust/html");
+            let tarball_dir_new = format!("{tarball_dir}/rustc");
 
             if Command::new("tar")
                 .arg("tf")
@@ -535,7 +535,7 @@ impl Context {
 
         // Upload this to `/doc/$channel`
         let bucket = &self.config.upload_bucket;
-        let dst = format!("s3://{}/doc/{}/", bucket, upload_dir);
+        let dst = format!("s3://{bucket}/doc/{upload_dir}/");
         run(self
             .aws_s3()
             .arg("sync")
@@ -549,7 +549,7 @@ impl Context {
 
         // Stable artifacts also go to `/doc/$version/
         if upload_dir == "stable" {
-            let dst = format!("s3://{}/doc/{}/", bucket, version);
+            let dst = format!("s3://{bucket}/doc/{version}/");
             run(self
                 .aws_s3()
                 .arg("sync")
@@ -571,7 +571,7 @@ impl Context {
             &[if dir == "stable" {
                 "/*".into()
             } else {
-                format!("/{}/*", dir)
+                format!("/{dir}/*")
             }],
         )
     }
@@ -579,7 +579,7 @@ impl Context {
     fn publish_release(&mut self) -> Result<(), Error> {
         let bucket = &self.config.upload_bucket;
         let dir = &self.config.upload_dir;
-        let dst = format!("s3://{}/{}/", bucket, dir);
+        let dst = format!("s3://{bucket}/{dir}/");
         run(self
             .aws_s3()
             .arg("cp")
@@ -607,7 +607,7 @@ impl Context {
     fn invalidate_cloudfront(&self, distribution_id: &str, paths: &[String]) -> Result<(), Error> {
         if self.config.skip_cloudfront_invalidations {
             println!();
-            println!("WARNING! Skipped CloudFront invalidation of: {:?}", paths);
+            println!("WARNING! Skipped CloudFront invalidation of: {paths:?}");
             println!("Unset PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS if you're in production");
             println!();
             return Ok(());
@@ -647,7 +647,7 @@ impl Context {
             Some(fastly) => fastly,
             None => {
                 println!();
-                println!("WARNING! Skipped Fastly invalidation of: {:?}", paths);
+                println!("WARNING! Skipped Fastly invalidation of: {paths:?}");
                 println!("Set PROMOTE_RELEASE_FASTLY_API_TOKEN and PROMOTE_RELEASE_FASTLY_SERVICE_ID if you want to invalidate Fastly");
                 println!();
                 return Ok(());
@@ -807,7 +807,7 @@ impl Context {
             &tag_name,
             username,
             email,
-            &format!("{} release", version),
+            &format!("{version} release"),
         )?;
 
         github.token(repository)?.tag(CreateTag {
@@ -863,7 +863,7 @@ impl Context {
             let announcements_category = 18;
             let internals_url = discourse.create_topic(
                 announcements_category,
-                &format!("Rust {} pre-release testing", version),
+                &format!("Rust {version} pre-release testing"),
                 &internals_contents,
             )?;
             let blog_contents = if let Some(contents) = self.config.stable_dev_static_blog_contents(
@@ -898,7 +898,7 @@ impl Context {
             // We also post to Discourse with a release announcement once the PR is merged.
             let version = self.current_version.as_ref().expect("has current version");
             if let Err(e) = token.merge_pr(pr) {
-                eprintln!("Failed to merge PR: {:?}", e);
+                eprintln!("Failed to merge PR: {e:?}");
                 return Ok(());
             }
 
@@ -981,7 +981,7 @@ impl Context {
             "{}/{}/channel-rust-{}.toml",
             self.config.upload_addr, self.config.upload_dir, self.config.channel
         );
-        println!("downloading manifest from: {}", url);
+        println!("downloading manifest from: {url}");
 
         Ok(self
             .download_file(&url)?
@@ -994,7 +994,7 @@ impl Context {
             "{}/{}/{}/channel-rust-{}.toml",
             self.config.upload_addr, self.config.upload_dir, self.date, self.config.channel,
         );
-        println!("checking if manifest exists: {}", url);
+        println!("checking if manifest exists: {url}");
 
         Ok(self.download_file(&url)?.is_some())
     }
@@ -1022,7 +1022,7 @@ impl Context {
 }
 
 fn run(cmd: &mut Command) -> Result<Output, Error> {
-    println!("running {:?}", cmd);
+    println!("running {cmd:?}");
     let result = cmd.spawn()?.wait_with_output()?;
     if !result.status.success() {
         anyhow::bail!("failed command:{:?}\n:{}", cmd, result.status);

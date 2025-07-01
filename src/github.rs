@@ -74,8 +74,7 @@ impl Github {
         self.start_jwt_request()?;
         self.client.get(true)?;
         self.client.url(&format!(
-            "https://api.github.com/repos/{}/installation",
-            repository
+            "https://api.github.com/repos/{repository}/installation"
         ))?;
         #[derive(serde::Deserialize)]
         struct InstallationResponse {
@@ -174,7 +173,7 @@ impl RepositoryClient<'_> {
             .client
             .with_body(&request)
             .send_with_response::<CreatedTag>()
-            .with_context(|| format!("tag request {:?}", request))?;
+            .with_context(|| format!("tag request {request:?}"))?;
 
         self.create_ref(&format!("refs/tags/{}", tag.tag_name), &created.sha)?;
 
@@ -407,7 +406,7 @@ impl RepositoryClient<'_> {
         self.client.url(&format!(
             "https://api.github.com/repos/{repo}/contents/{path}{maybe_ref}",
             repo = self.repo,
-            maybe_ref = sha.map(|s| format!("?ref={}", s)).unwrap_or_default()
+            maybe_ref = sha.map(|s| format!("?ref={s}")).unwrap_or_default()
         ))?;
         self.client.without_body().send_with_response::<GitFile>()
     }
