@@ -61,7 +61,7 @@ RUN mkdir /tmp/awscli && \
     cd /tmp/awscli && \
     curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscli.zip && \
     unzip -q awscli.zip && \
-    sudo ./aws/install && \
+    ./aws/install && \
     cd / && \
     rm -rf /tmp/awscli
 
