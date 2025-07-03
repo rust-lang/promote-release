@@ -720,13 +720,22 @@ impl Context {
             .upload_addr
             .trim_start_matches("https://")
             .trim_start_matches("http://");
-        manifest.write_all(
-            format!(
-                "{}/{}/{}/channel-rust-{}.toml\n",
-                upload_addr, self.config.upload_dir, self.date, self.config.channel
-            )
-            .as_bytes(),
-        )?;
+
+        // Stable and beta releases include multiple manifests for the same release. Make sure to
+        // write all of them in manifests.txt.
+        for entry in self.dl_dir().read_dir()? {
+            let os_name = entry?.file_name();
+            let name = os_name.to_str().expect("non utf-8 file");
+            if name.starts_with("channel-rust-") && name.ends_with(".toml") {
+                manifest.write_all(
+                    format!(
+                        "{upload_addr}/{}/{}/{name}\n",
+                        self.config.upload_dir, self.date,
+                    )
+                    .as_bytes(),
+                )?;
+            }
+        }
 
         run(self
             .aws_s3api()
