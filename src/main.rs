@@ -702,11 +702,14 @@ impl Context {
             // the logs is just confusing noise. Any authentication/permission error will be
             // encountered at the upload stage anyway.
             .stderr(Stdio::null()));
-        let if_none_match = match get {
-            Ok(output) => serde_json::from_slice::<GetResult>(&output.stdout)?.etag,
+        let (conditional_header, conditional_value) = match get {
+            Ok(output) => (
+                "--if-match",
+                serde_json::from_slice::<GetResult>(&output.stdout)?.etag,
+            ),
             // If the GET failed assume the file doesn't exist, and we need to upload a new one.
             // Setting the If-None-Match header to * will fail the request if the file exists.
-            Err(_) => "*".to_string(),
+            Err(_) => ("--if-none-match", "*".to_string()),
         };
 
         let upload_addr = self
@@ -731,7 +734,7 @@ impl Context {
             .args(["--key", "manifests.txt"])
             // Fail the request if the manifest was already modified by something else (for
             // example, another release running in parallel).
-            .args(["--if-none-match", &if_none_match]))?;
+            .args([conditional_header, &conditional_value]))?;
 
         Ok(())
     }
