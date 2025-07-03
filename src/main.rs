@@ -12,7 +12,7 @@ mod sign;
 mod smoke_test;
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
@@ -711,6 +711,9 @@ impl Context {
             // Setting the If-None-Match header to * will fail the request if the file exists.
             Err(_) => ("--if-none-match", "*".to_string()),
         };
+
+        // Append the new item at the end of the manifest.
+        manifest.seek(SeekFrom::End(0))?;
 
         let upload_addr = self
             .config
