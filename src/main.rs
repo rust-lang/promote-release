@@ -744,6 +744,7 @@ impl Context {
             .arg(manifest.path())
             .args(["--bucket", &self.config.upload_bucket])
             .args(["--key", "manifests.txt"])
+            .args(["--content-type", "text/plain"])
             // Fail the request if the manifest was already modified by something else (for
             // example, another release running in parallel).
             .args([conditional_header, &conditional_value]))?;
