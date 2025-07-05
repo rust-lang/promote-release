@@ -258,6 +258,7 @@ impl Context {
 
         self.invalidate_releases()?;
         self.update_manifests_txt()?;
+        self.invalidate_manifests_txt()?;
 
         // Clean up after ourselves to avoid leaving gigabytes of artifacts
         // around.
@@ -598,8 +599,16 @@ impl Context {
         // https://github.com/rust-lang/simpleinfra/pull/295
         let paths = ["/dist/*".into()];
 
-        self.invalidate_cloudfront(&self.config.cloudfront_static_id, &paths)?;
-        self.invalidate_fastly(&paths)?;
+        self.invalidate_all_cdns(&paths)
+    }
+
+    fn invalidate_manifests_txt(&self) -> Result<(), Error> {
+        self.invalidate_all_cdns(&["manifests.txt".into()])
+    }
+
+    fn invalidate_all_cdns(&self, paths: &[String]) -> Result<(), Error> {
+        self.invalidate_cloudfront(&self.config.cloudfront_static_id, paths)?;
+        self.invalidate_fastly(paths)?;
 
         Ok(())
     }
