@@ -603,7 +603,7 @@ impl Context {
     }
 
     fn invalidate_manifests_txt(&self) -> Result<(), Error> {
-        self.invalidate_all_cdns(&["manifests.txt".into()])
+        self.invalidate_all_cdns(&["/manifests.txt".into()])
     }
 
     fn invalidate_all_cdns(&self, paths: &[String]) -> Result<(), Error> {
