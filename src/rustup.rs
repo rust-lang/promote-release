@@ -1,9 +1,9 @@
-use std::fs;
-use std::path::{Path, PathBuf};
-
 use anyhow::{anyhow, Error};
 use curl::easy::Easy;
 use serde::Deserialize;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Output;
 
 use crate::config::Channel;
 use crate::curl_helper::BodyExt;
@@ -168,7 +168,11 @@ impl Context {
         Ok(dl)
     }
 
-    fn archive_rustup_artifacts(&mut self, dist_dir: &Path, version: &str) -> Result<(), Error> {
+    fn archive_rustup_artifacts(
+        &mut self,
+        dist_dir: &Path,
+        version: &str,
+    ) -> Result<Output, Error> {
         println!("Archiving artifacts for version {version}...");
 
         let path = format!("archive/{}/", version);
@@ -176,7 +180,7 @@ impl Context {
         self.upload_rustup_artifacts(&dist_dir.join("dist"), &path)
     }
 
-    fn promote_rustup_artifacts(&mut self, dist_dir: &Path) -> Result<(), Error> {
+    fn promote_rustup_artifacts(&mut self, dist_dir: &Path) -> Result<Output, Error> {
         println!("Promoting artifacts to dist/...");
 
         let release_bucket_url = format!(
@@ -215,7 +219,11 @@ impl Context {
         Ok(())
     }
 
-    fn upload_rustup_artifacts(&mut self, dist_dir: &Path, target_path: &str) -> Result<(), Error> {
+    fn upload_rustup_artifacts(
+        &mut self,
+        dist_dir: &Path,
+        target_path: &str,
+    ) -> Result<Output, Error> {
         run(self
             .aws_s3()
             .arg("cp")
@@ -228,7 +236,7 @@ impl Context {
             )))
     }
 
-    fn update_rustup_release(&mut self, version: &str) -> Result<(), Error> {
+    fn update_rustup_release(&mut self, version: &str) -> Result<Output, Error> {
         println!("Updating version and manifest...");
 
         let manifest_path = self.dl_dir().join("release-stable.toml");
