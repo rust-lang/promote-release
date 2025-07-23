@@ -116,7 +116,7 @@ impl Context {
     fn get_next_rustup_version(&self, sha: &str) -> anyhow::Result<String> {
         // Allow the version to be overridden manually, for example to test the release process
         if let Ok(version) = std::env::var("PROMOTE_RELEASE_RUSTUP_OVERRIDE_VERSION") {
-            println!("Using override version: {}", version);
+            println!("Using override version: {version}");
             Ok(version)
         } else {
             self.get_next_rustup_version_from_github(sha)
@@ -170,7 +170,7 @@ impl Context {
     ) -> Result<Output, Error> {
         println!("Archiving artifacts for version {version}...");
 
-        let path = format!("archive/{}/", version);
+        let path = format!("archive/{version}/");
 
         self.upload_rustup_artifacts(&dist_dir.join("dist"), &path)
     }
@@ -208,7 +208,7 @@ impl Context {
                 .arg("cp")
                 .arg("--only-show-errors")
                 .arg(format!("{}/rustup-init.sh", dist_dir.display()))
-                .arg(format!("{}/{}", release_bucket_url, destination)))?;
+                .arg(format!("{release_bucket_url}/{destination}")))?;
         }
 
         Ok(())
@@ -238,9 +238,8 @@ impl Context {
         let manifest = format!(
             r#"
 schema-version = '1'
-version = '{}'
-            "#,
-            version
+version = '{version}'
+            "#
         );
 
         fs::write(&manifest_path, manifest)?;
