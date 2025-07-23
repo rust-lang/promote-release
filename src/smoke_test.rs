@@ -79,7 +79,7 @@ impl SmokeTester {
         let cargo = |args: &[&str]| {
             crate::run(
                 Command::new("cargo")
-                    .arg(format!("+{}", channel))
+                    .arg(format!("+{channel}"))
                     .args(args)
                     .env("USER", "root")
                     .current_dir(&cargo_dir),
@@ -115,7 +115,7 @@ impl SmokeTester {
 }
 
 fn server_handler(req: Request<Body>, paths: Arc<Vec<PathBuf>>) -> Result<Response<Body>, Error> {
-    let file_name = match req.uri().path().split('/').last() {
+    let file_name = match req.uri().path().split('/').next_back() {
         Some(file_name) => file_name,
         None => return not_found(),
     };

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Start a dummy local release process, without making changes to any production
 # system. This requires docker and docker-compose to be installed.
 

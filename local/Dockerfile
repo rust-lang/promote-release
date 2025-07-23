@@ -5,7 +5,7 @@
 # regularly takes 2 minutes to download 20MB of binary). The only other way
 # they distribute the CLI is from Docker, so we load their image as a stage and
 # then copy the binary from it later in the build.
-FROM quay.io/minio/mc:RELEASE.2025-02-21T16-00-46Z AS mc
+FROM quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z AS mc
 
 FROM ubuntu:24.04
 
@@ -23,7 +23,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     unzip
 
 # Install the AWS CLI
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(arch).zip" -o "awscliv2.zip"; \
+RUN curl --fail "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"; \
     unzip awscliv2.zip; \
     rm awscliv2.zip; \
     ./aws/install

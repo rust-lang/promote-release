@@ -13,9 +13,9 @@ mod sign;
 mod smoke_test;
 
 use std::fs::{self, File, OpenOptions};
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 use std::{collections::HashSet, env};
 
@@ -28,6 +28,10 @@ use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
 use github::{CreateTag, Github};
+use rand::prelude::Distribution;
+use rand::thread_rng;
+use serde::Deserialize;
+use tempfile::NamedTempFile;
 
 const TARGET: &str = env!("TARGET");
 
@@ -135,11 +139,16 @@ impl Context {
         let previous_version = manifest["pkg"]["rust"]["version"]
             .as_str()
             .expect("rust version not a string");
-        println!("previous version: {}", previous_version);
+        println!("previous version: {previous_version}");
 
         // If the previously released version is the same rev, then there's
         // nothing for us to do, nothing has changed.
-        if !self.config.bypass_startup_checks && previous_version.contains(&rev[..7]) {
+        // For nightly, we want to release every night, even if it's the same as the previous one,
+        // to make it easier for people and tools to use.
+        if !self.config.bypass_startup_checks
+            && self.config.channel != Channel::Nightly
+            && previous_version.contains(&rev[..7])
+        {
             println!("found rev in previous version, skipping");
             println!("set PROMOTE_RELEASE_BYPASS_STARTUP_CHECKS=1 to bypass the check");
             return Ok(());
@@ -250,6 +259,8 @@ impl Context {
         self.publish_release()?;
 
         self.invalidate_releases()?;
+        self.update_manifests_txt()?;
+        self.invalidate_manifests_txt()?;
 
         // Clean up after ourselves to avoid leaving gigabytes of artifacts
         // around.
@@ -275,7 +286,7 @@ impl Context {
             if !(filter(&filename) && filename.ends_with(".tar.xz")) {
                 continue;
             }
-            println!("looking inside {} for a version", filename);
+            println!("looking inside {filename} for a version");
 
             let file = File::open(e.path())?;
             let reader = xz2::read::XzDecoder::new(file);
@@ -311,12 +322,12 @@ impl Context {
         let prev_version = prev.split(' ').next().unwrap();
 
         let current = self.load_version(|filename| filename.starts_with("rustc-"))?;
-        println!("current version: {}", current);
+        println!("current version: {current}");
         let current_rustc = current.split(' ').next().unwrap();
         self.current_version = Some(current_rustc.to_string());
 
         let current_cargo = self.load_version(|filename| filename.starts_with("cargo-"))?;
-        println!("current cargo version: {}", current_cargo);
+        println!("current cargo version: {current_cargo}");
         let current_cargo = current_cargo.split(' ').next().unwrap();
         self.current_cargo_version = Some(current_cargo.to_string());
 
@@ -380,7 +391,7 @@ impl Context {
             .arg("cp")
             .arg("--recursive")
             .arg("--only-show-errors")
-            .arg(self.s3_artifacts_url(&format!("{}/", rev)))
+            .arg(self.s3_artifacts_url(&format!("{rev}/")))
             .arg(format!("{}/", dl.display())))?;
 
         let mut files = dl.read_dir()?;
@@ -447,7 +458,8 @@ impl Context {
             .arg("--storage-class")
             .arg(&self.config.storage_class)
             .arg(format!("{}/", self.dl_dir().display()))
-            .arg(&dst))
+            .arg(&dst))?;
+        Ok(())
     }
 
     fn publish_docs(&mut self) -> Result<(), Error> {
@@ -468,9 +480,9 @@ impl Context {
         let target = "x86_64-unknown-linux-gnu";
 
         // Unpack the regular documentation tarball.
-        let tarball_prefix = format!("rust-docs-{}-{}", version, target);
+        let tarball_prefix = format!("rust-docs-{version}-{target}");
         let tarball = format!("{}.tar.gz", self.dl_dir().join(&tarball_prefix).display());
-        let tarball_dir = format!("{}/rust-docs/share/doc/rust/html", tarball_prefix);
+        let tarball_dir = format!("{tarball_prefix}/rust-docs/share/doc/rust/html");
 
         // The `m` flag touches all extracted files, therefore setting their modification time
         // to the current date. This will cause the sync to overwrite all remote files with the
@@ -483,7 +495,7 @@ impl Context {
             .current_dir(&docs))?;
 
         // Construct path to rustc documentation.
-        let tarball_prefix = format!("rustc-docs-{}-{}", version, target);
+        let tarball_prefix = format!("rustc-docs-{version}-{target}");
         let tarball = format!("{}.tar.gz", self.dl_dir().join(&tarball_prefix).display());
 
         // Only create and unpack rustc docs if artefacts include tarball.
@@ -492,8 +504,8 @@ impl Context {
             fs::create_dir_all(&rustc_docs)?;
 
             // Construct the path that contains the documentation inside the tarball.
-            let tarball_dir = format!("{}/rustc-docs/share/doc/rust/html", tarball_prefix);
-            let tarball_dir_new = format!("{}/rustc", tarball_dir);
+            let tarball_dir = format!("{tarball_prefix}/rustc-docs/share/doc/rust/html");
+            let tarball_dir_new = format!("{tarball_dir}/rustc");
 
             if Command::new("tar")
                 .arg("tf")
@@ -526,7 +538,7 @@ impl Context {
 
         // Upload this to `/doc/$channel`
         let bucket = &self.config.upload_bucket;
-        let dst = format!("s3://{}/doc/{}/", bucket, upload_dir);
+        let dst = format!("s3://{bucket}/doc/{upload_dir}/");
         run(self
             .aws_s3()
             .arg("sync")
@@ -540,7 +552,7 @@ impl Context {
 
         // Stable artifacts also go to `/doc/$version/
         if upload_dir == "stable" {
-            let dst = format!("s3://{}/doc/{}/", bucket, version);
+            let dst = format!("s3://{bucket}/doc/{version}/");
             run(self
                 .aws_s3()
                 .arg("sync")
@@ -562,7 +574,7 @@ impl Context {
             &[if dir == "stable" {
                 "/*".into()
             } else {
-                format!("/{}/*", dir)
+                format!("/{dir}/*")
             }],
         )
     }
@@ -570,7 +582,7 @@ impl Context {
     fn publish_release(&mut self) -> Result<(), Error> {
         let bucket = &self.config.upload_bucket;
         let dir = &self.config.upload_dir;
-        let dst = format!("s3://{}/{}/", bucket, dir);
+        let dst = format!("s3://{bucket}/{dir}/");
         run(self
             .aws_s3()
             .arg("cp")
@@ -579,7 +591,8 @@ impl Context {
             .arg("--storage-class")
             .arg(&self.config.storage_class)
             .arg(format!("{}/", self.dl_dir().display()))
-            .arg(&dst))
+            .arg(&dst))?;
+        Ok(())
     }
 
     fn invalidate_releases(&self) -> Result<(), Error> {
@@ -588,8 +601,16 @@ impl Context {
         // https://github.com/rust-lang/simpleinfra/pull/295
         let paths = ["/dist/*".into()];
 
-        self.invalidate_cloudfront(&self.config.cloudfront_static_id, &paths)?;
-        self.invalidate_fastly(&paths)?;
+        self.invalidate_all_cdns(&paths)
+    }
+
+    fn invalidate_manifests_txt(&self) -> Result<(), Error> {
+        self.invalidate_all_cdns(&["/manifests.txt".into()])
+    }
+
+    fn invalidate_all_cdns(&self, paths: &[String]) -> Result<(), Error> {
+        self.invalidate_cloudfront(&self.config.cloudfront_static_id, paths)?;
+        self.invalidate_fastly(paths)?;
 
         Ok(())
     }
@@ -597,7 +618,7 @@ impl Context {
     fn invalidate_cloudfront(&self, distribution_id: &str, paths: &[String]) -> Result<(), Error> {
         if self.config.skip_cloudfront_invalidations {
             println!();
-            println!("WARNING! Skipped CloudFront invalidation of: {:?}", paths);
+            println!("WARNING! Skipped CloudFront invalidation of: {paths:?}");
             println!("Unset PROMOTE_RELEASE_SKIP_CLOUDFRONT_INVALIDATIONS if you're in production");
             println!();
             return Ok(());
@@ -637,7 +658,7 @@ impl Context {
             Some(fastly) => fastly,
             None => {
                 println!();
-                println!("WARNING! Skipped Fastly invalidation of: {:?}", paths);
+                println!("WARNING! Skipped Fastly invalidation of: {paths:?}");
                 println!("Set PROMOTE_RELEASE_FASTLY_API_TOKEN and PROMOTE_RELEASE_FASTLY_SERVICE_ID if you want to invalidate Fastly");
                 println!();
                 return Ok(());
@@ -647,6 +668,97 @@ impl Context {
         for path in paths {
             fastly.purge(path)?;
         }
+
+        Ok(())
+    }
+
+    fn update_manifests_txt(&self) -> Result<(), Error> {
+        // Updating the manifests.txt file can fail if another release process is modifying it at
+        // the same time. Retry the update multiple times with a randomized delay to avoid stepping
+        // on the other release processes's toes.
+        let mut attempts = 0;
+        loop {
+            match self.attempt_update_manifests_txt() {
+                Ok(()) => break,
+                Err(err) if attempts > 20 => return Err(err),
+                Err(_) => {
+                    eprintln!("warning: failed to update manifests.txt, retrying...");
+                    attempts += 1;
+
+                    let delay = rand::distributions::Uniform::new(1, 10).sample(&mut thread_rng());
+                    std::thread::sleep(Duration::from_secs(delay));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn attempt_update_manifests_txt(&self) -> Result<(), Error> {
+        #[derive(Deserialize)]
+        struct GetResult {
+            #[serde(rename = "ETag")]
+            etag: String,
+        }
+
+        let mut manifest = NamedTempFile::new()?;
+        let get = run(self
+            .aws_s3api()
+            .arg("get-object")
+            .args(["--bucket", &self.config.upload_bucket])
+            .args(["--key", "manifests.txt"])
+            .arg(manifest.path())
+            .stdout(Stdio::piped())
+            // Ignore stderr, as it might include a "not found" error if the file is not present.
+            // That error is being handled below by uploading a brand new file, so showing it in
+            // the logs is just confusing noise. Any authentication/permission error will be
+            // encountered at the upload stage anyway.
+            .stderr(Stdio::null()));
+        let (conditional_header, conditional_value) = match get {
+            Ok(output) => (
+                "--if-match",
+                serde_json::from_slice::<GetResult>(&output.stdout)?.etag,
+            ),
+            // If the GET failed assume the file doesn't exist, and we need to upload a new one.
+            // Setting the If-None-Match header to * will fail the request if the file exists.
+            Err(_) => ("--if-none-match", "*".to_string()),
+        };
+
+        // Append the new item at the end of the manifest.
+        manifest.seek(SeekFrom::End(0))?;
+
+        let upload_addr = self
+            .config
+            .upload_addr
+            .trim_start_matches("https://")
+            .trim_start_matches("http://");
+
+        // Stable and beta releases include multiple manifests for the same release. Make sure to
+        // write all of them in manifests.txt.
+        for entry in self.dl_dir().read_dir()? {
+            let os_name = entry?.file_name();
+            let name = os_name.to_str().expect("non utf-8 file");
+            if name.starts_with("channel-rust-") && name.ends_with(".toml") {
+                manifest.write_all(
+                    format!(
+                        "{upload_addr}/{}/{}/{name}\n",
+                        self.config.upload_dir, self.date,
+                    )
+                    .as_bytes(),
+                )?;
+            }
+        }
+
+        run(self
+            .aws_s3api()
+            .arg("put-object")
+            .arg("--body")
+            .arg(manifest.path())
+            .args(["--bucket", &self.config.upload_bucket])
+            .args(["--key", "manifests.txt"])
+            .args(["--content-type", "text/plain"])
+            // Fail the request if the manifest was already modified by something else (for
+            // example, another release running in parallel).
+            .args([conditional_header, &conditional_value]))?;
 
         Ok(())
     }
@@ -722,7 +834,7 @@ impl Context {
             &tag_name,
             username,
             email,
-            &format!("{} release", version),
+            &format!("{version} release"),
         )?;
 
         github.token(repository)?.tag(CreateTag {
@@ -778,7 +890,7 @@ impl Context {
             let announcements_category = 18;
             let internals_url = discourse.create_topic(
                 announcements_category,
-                &format!("Rust {} pre-release testing", version),
+                &format!("Rust {version} pre-release testing"),
                 &internals_contents,
             )?;
             let blog_contents = if let Some(contents) = self.config.stable_dev_static_blog_contents(
@@ -813,7 +925,7 @@ impl Context {
             // We also post to Discourse with a release announcement once the PR is merged.
             let version = self.current_version.as_ref().expect("has current version");
             if let Err(e) = token.merge_pr(pr) {
-                eprintln!("Failed to merge PR: {:?}", e);
+                eprintln!("Failed to merge PR: {e:?}");
                 return Ok(());
             }
 
@@ -878,12 +990,25 @@ impl Context {
         cmd
     }
 
+    fn aws_s3api(&self) -> Command {
+        let mut cmd = Command::new("aws");
+
+        // Allow using non-S3 backends with the AWS CLI.
+        if let Some(url) = &self.config.s3_endpoint_url {
+            cmd.arg("--endpoint-url");
+            cmd.arg(url);
+        }
+
+        cmd.arg("s3api");
+        cmd
+    }
+
     fn download_top_level_manifest(&mut self) -> Result<toml::Value, Error> {
         let url = format!(
             "{}/{}/channel-rust-{}.toml",
             self.config.upload_addr, self.config.upload_dir, self.config.channel
         );
-        println!("downloading manifest from: {}", url);
+        println!("downloading manifest from: {url}");
 
         Ok(self
             .download_file(&url)?
@@ -896,7 +1021,7 @@ impl Context {
             "{}/{}/{}/channel-rust-{}.toml",
             self.config.upload_addr, self.config.upload_dir, self.date, self.config.channel,
         );
-        println!("checking if manifest exists: {}", url);
+        println!("checking if manifest exists: {url}");
 
         Ok(self.download_file(&url)?.is_some())
     }
@@ -923,11 +1048,11 @@ impl Context {
     }
 }
 
-fn run(cmd: &mut Command) -> Result<(), Error> {
-    println!("running {:?}", cmd);
-    let status = cmd.status()?;
-    if !status.success() {
-        anyhow::bail!("failed command:{:?}\n:{}", cmd, status);
+fn run(cmd: &mut Command) -> Result<Output, Error> {
+    println!("running {cmd:?}");
+    let result = cmd.spawn()?.wait_with_output()?;
+    if !result.status.success() {
+        anyhow::bail!("failed command:{:?}\n:{}", cmd, result.status);
     }
-    Ok(())
+    Ok(result)
 }

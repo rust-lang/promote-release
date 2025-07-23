@@ -84,7 +84,7 @@ impl<'a> BuildManifest<'a> {
     fn extract(builder: &'a Context) -> Result<NamedTempFile, Error> {
         let release = builder.config.channel.release_name(builder);
         let tarball_name = format!("build-manifest-{}-{}", release, crate::TARGET);
-        let tarball_path = builder.dl_dir().join(format!("{}.tar.xz", tarball_name));
+        let tarball_path = builder.dl_dir().join(format!("{tarball_name}.tar.xz"));
 
         let binary_path = Path::new(&tarball_name)
             .join("build-manifest")

@@ -28,7 +28,7 @@ impl Fastly {
         self.client.post(true)?;
         self.client.url(&url)?;
 
-        println!("invalidating Fastly cache with POST '{}'", url);
+        println!("invalidating Fastly cache with POST '{url}'");
 
         self.client.perform().map_err(|error| error.into())
     }

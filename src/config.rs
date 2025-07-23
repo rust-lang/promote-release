@@ -343,10 +343,9 @@ where
     R: FromStr,
     Error: From<R::Err>,
 {
-    match std::env::var(format!("{}{}", ENVIRONMENT_VARIABLE_PREFIX, name)) {
+    match std::env::var(format!("{ENVIRONMENT_VARIABLE_PREFIX}{name}")) {
         Ok(val) => Ok(Some(val.parse().map_err(Error::from).context(format!(
-            "the {} environment variable has invalid content",
-            name
+            "the {name} environment variable has invalid content"
         ))?)),
         Err(VarError::NotPresent) => Ok(None),
         Err(VarError::NotUnicode(_)) => {

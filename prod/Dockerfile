@@ -2,7 +2,7 @@
 #  Source code build image  #
 #############################
 
-FROM ubuntu:22.04 AS build
+FROM ubuntu:24.04 AS build
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ca-certificates \
@@ -39,15 +39,15 @@ RUN find -name "*.rs" -exec touch {} \; && cargo build --release
 #  Output image  #
 ##################
 
-FROM ubuntu:22.04 AS binary
+FROM ubuntu:24.04 AS binary
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    awscli \
     build-essential \
     ca-certificates \
     curl \
     git \
-    gnupg
+    gnupg \
+    unzip
 
 # Install rustup while removing the pre-installed stable toolchain.
 RUN curl https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init >/tmp/rustup-init && \
@@ -55,6 +55,15 @@ RUN curl https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustu
     /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain stable && \
     /root/.cargo/bin/rustup toolchain remove stable
 ENV PATH=/root/.cargo/bin:$PATH
+
+# Install a recent AWS CLI v2, as the one included in the Ubuntu repositories is old.
+RUN mkdir /tmp/awscli && \
+    cd /tmp/awscli && \
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscli.zip && \
+    unzip -q awscli.zip && \
+    ./aws/install && \
+    cd / && \
+    rm -rf /tmp/awscli
 
 RUN aws configure set default.s3.max_concurrent_requests 150
 RUN aws configure set default.s3.max_queue_size 10000
