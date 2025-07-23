@@ -16,11 +16,6 @@ struct Content {
 
 #[derive(Deserialize)]
 struct CargoToml {
-    workspace: Workspace,
-}
-
-#[derive(Deserialize)]
-struct Workspace {
     package: Package,
 }
 
@@ -141,7 +136,7 @@ impl Context {
         let content: Content = client.without_body().send_with_response()?;
         let toml = decode_and_deserialize_cargo_toml(&content.content)?;
 
-        Ok(toml.workspace.package.version)
+        Ok(toml.package.version)
     }
 
     fn download_rustup_artifacts(&mut self, sha: &str) -> Result<PathBuf, Error> {
@@ -293,13 +288,13 @@ mod tests {
     fn decode_cargo_toml() {
         let base64_encoded_toml = base64::encode(
             r#"
-            [workspace.package]
+            [package]
             version = "1.2.3"
         "#,
         );
 
         let toml = decode_and_deserialize_cargo_toml(&base64_encoded_toml).unwrap();
 
-        assert_eq!(toml.workspace.package.version, "1.2.3");
+        assert_eq!(toml.package.version, "1.2.3");
     }
 }
