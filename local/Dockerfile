@@ -28,7 +28,7 @@ RUN curl --fail "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" 
     rm awscliv2.zip; \
     ./aws/install
 
-# Install rustup while removing the pre-installed stable toolchain.
+# Install rustup
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable
 ENV PATH=/root/.cargo/bin:$PATH
