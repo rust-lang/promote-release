@@ -8,6 +8,7 @@ mod discourse;
 mod fastly;
 mod github;
 mod recompress;
+mod rustup;
 mod sign;
 mod smoke_test;
 
@@ -80,6 +81,7 @@ impl Context {
         match self.config.action {
             config::Action::PromoteRelease => self.do_release()?,
             config::Action::PromoteBranches => self.do_branching()?,
+            config::Action::PromoteRustup => self.promote_rustup()?,
         }
         Ok(())
     }

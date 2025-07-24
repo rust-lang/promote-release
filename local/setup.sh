@@ -11,7 +11,7 @@ MINIO_URL="http://${MINIO_HOST}:${MINIO_PORT}"
 MINIO_ACCESS_KEY="access_key"
 MINIO_SECRET_KEY="secret_key"
 
-MINIO_BUCKETS=( "static" "artifacts" )
+MINIO_BUCKETS=( "static" "artifacts" "rustup-builds" )
 
 # Quit immediately when docker-compose receives a Ctrl+C
 trap exit EXIT
@@ -77,9 +77,9 @@ cat <<EOF
 
 To start the release process locally, run either:
 
-    ./run.sh nightly
-    ./run.sh beta
-    ./run.sh stable
+    ./run.sh release nightly
+    ./run.sh release beta
+    ./run.sh release stable
 
 To use a release produced locally, set this environment variable when
 interacting with rustup:

@@ -101,6 +101,14 @@ for file in "${DOWNLOAD_STANDALONE[@]}"; do
     download "${file}"
 done
 
+# Build the promote-release binary if it hasn't been pre-built
+if [[ ! -f "/src/target/release/promote-release" ]]; then
+    echo "==> building promote-release"
+    cd /src
+    cargo build --release
+    cd ..
+fi
+
 echo "==> configuring the environment"
 # Point to the right GnuPG environment
 export GNUPGHOME=/persistent/gpg-home

@@ -15,20 +15,22 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     git \
     gnupg \
     jq \
+    libssl-dev \
+    openssl \
+    pkg-config \
     python3 \
-    unzip \
-    socat
+    socat \
+    unzip
 
-# Install awscli
-RUN curl --fail "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" && \
-    unzip awscliv2.zip && \
+# Install the AWS CLI
+RUN curl --fail "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"; \
+    unzip awscliv2.zip; \
+    rm awscliv2.zip; \
     ./aws/install
 
-# Install rustup while removing the pre-installed stable toolchain.
-RUN curl https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init >/tmp/rustup-init && \
-    chmod +x /tmp/rustup-init && \
-    /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain stable && \
-    /root/.cargo/bin/rustup toolchain remove stable
+# Install rustup
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable
 ENV PATH=/root/.cargo/bin:$PATH
 
 COPY --from=mc /usr/bin/mc /usr/local/bin/mc
