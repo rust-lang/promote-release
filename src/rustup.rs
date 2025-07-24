@@ -177,19 +177,7 @@ impl Context {
 
     fn promote_rustup_artifacts(&mut self, dist_dir: &Path) -> Result<Output, Error> {
         println!("Promoting artifacts to dist/...");
-
-        let release_bucket_url = format!(
-            "s3://{}/{}/dist/",
-            self.config.upload_bucket, self.config.upload_dir,
-        );
-
-        run(self
-            .aws_s3()
-            .arg("cp")
-            .arg("--recursive")
-            .arg("--only-show-errors")
-            .arg(format!("{}/dist/", dist_dir.display()))
-            .arg(&release_bucket_url))
+        self.upload_rustup_artifacts(&dist_dir.join("dist"), "dist/")
     }
 
     fn update_rustup_installer(&mut self, dist_dir: &Path) -> Result<(), Error> {
