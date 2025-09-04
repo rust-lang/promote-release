@@ -7,7 +7,6 @@ set -euo pipefail
 IFS=$'\n\t'
 
 RUSTC_REPO="https://github.com/rust-lang/rust"
-RUSTC_DEFAULT_BRANCH="master"
 
 # CDN to download CI artifacts from.
 DOWNLOAD_BASE="https://ci-artifacts.rust-lang.org/rustc-builds"
@@ -47,9 +46,9 @@ override_commit="$2"
 
 # Nightly is on the default branch
 if [[ "${channel}" = "nightly" ]]; then
-    branch="${RUSTC_DEFAULT_BRANCH}"
+    branch="HEAD"
 else
-    branch="${channel}"
+    branch="refs/heads/${channel}"
 fi
 
 echo "==> overriding files to force promote-release to run"
@@ -57,7 +56,7 @@ mc cp "/src/local/channel-rust-${channel}.toml" "local/static/dist/channel-rust-
 
 if [[ "${override_commit}" = "" ]]; then
     echo "==> detecting the last rustc commit on branch ${branch}"
-    commit="$(git ls-remote "${RUSTC_REPO}" | grep "refs/heads/${branch}" | awk '{print($1)}')"
+    commit="$(git ls-remote "${RUSTC_REPO}" "${branch}" | awk '{print($1)}')"
 else
     echo "=>> using overridden commit ${override_commit}"
     commit="${override_commit}"
