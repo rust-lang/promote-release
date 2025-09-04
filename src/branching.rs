@@ -18,7 +18,8 @@ impl Context {
             return Ok(());
         };
         let mut token = github.token("rust-lang/rust")?;
-        let bump_commit = branchpoint(&mut token, "master")?;
+        let repo = token.repository()?;
+        let bump_commit = branchpoint(&mut token, &repo.default_branch)?;
         let prebump_sha = bump_commit.parents[0].sha.clone();
         let beta_sha = token.get_ref("heads/beta")?;
 
