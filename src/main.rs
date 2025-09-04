@@ -114,7 +114,7 @@ impl Context {
         remote.connect(git2::Direction::Fetch)?;
 
         let git_ref = match self.config.channel {
-            Channel::Nightly => format!("refs/heads/{}", remote.default_branch()?.as_str().unwrap()),
+            Channel::Nightly => remote.default_branch()?.as_str().unwrap().to_string(),
             Channel::Beta => "refs/heads/beta".to_string(),
             Channel::Stable => "refs/heads/stable".to_string(),
         };

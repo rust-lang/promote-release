@@ -419,7 +419,9 @@ impl RepositoryClient<'_> {
             "https://api.github.com/repos/{repo}",
             repo = self.repo,
         ))?;
-        self.client.without_body().send_with_response::<Repository>()
+        self.client
+            .without_body()
+            .send_with_response::<Repository>()
     }
 
     pub(crate) fn merge_pr(&mut self, pr: u32) -> anyhow::Result<()> {
@@ -509,7 +511,7 @@ impl GitFile {
 
 #[derive(Debug, serde::Deserialize)]
 pub(crate) struct Repository {
-    pub(crate) default_branch: String
+    pub(crate) default_branch: String,
 }
 
 #[derive(Copy, Clone)]
