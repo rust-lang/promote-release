@@ -411,6 +411,19 @@ impl RepositoryClient<'_> {
         self.client.without_body().send_with_response::<GitFile>()
     }
 
+    /// Returns information about the current repository
+    pub(crate) fn repository(&mut self) -> anyhow::Result<Repository> {
+        self.start_new_request()?;
+        self.client.get(true)?;
+        self.client.url(&format!(
+            "https://api.github.com/repos/{repo}",
+            repo = self.repo,
+        ))?;
+        self.client
+            .without_body()
+            .send_with_response::<Repository>()
+    }
+
     pub(crate) fn merge_pr(&mut self, pr: u32) -> anyhow::Result<()> {
         self.start_new_request()?;
         self.client.put(true)?;
@@ -494,6 +507,11 @@ impl GitFile {
             panic!("content() on {:?}", self);
         }
     }
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct Repository {
+    pub(crate) default_branch: String,
 }
 
 #[derive(Copy, Clone)]

@@ -104,12 +104,6 @@ impl Context {
             return Ok(commit);
         }
 
-        let git_ref = match self.config.channel {
-            Channel::Nightly => "refs/heads/master",
-            Channel::Beta => "refs/heads/beta",
-            Channel::Stable => "refs/heads/stable",
-        };
-
         // git2 requires a git repository to be able to connect to a remote and fetch metadata, so
         // this creates an empty repository in a temporary directory. It will be deleted once the
         // function returns.
@@ -118,6 +112,12 @@ impl Context {
 
         let mut remote = repo.remote("origin", &self.config.repository)?;
         remote.connect(git2::Direction::Fetch)?;
+
+        let git_ref = match self.config.channel {
+            Channel::Nightly => remote.default_branch()?.as_str().unwrap().to_string(),
+            Channel::Beta => "refs/heads/beta".to_string(),
+            Channel::Stable => "refs/heads/stable".to_string(),
+        };
 
         for head in remote.list()? {
             if head.name() == git_ref {
