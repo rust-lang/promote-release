@@ -34,8 +34,6 @@ use tempfile::NamedTempFile;
 
 const TARGET: &str = env!("TARGET");
 
-const BLOG_PRIMARY_BRANCH: &str = "master";
-
 struct Context {
     work: PathBuf,
     handle: Easy,
@@ -904,8 +902,9 @@ impl Context {
             };
 
             let mut token = github.token(repository_for_blog)?;
+            let blog_repo = token.repository()?;
             token.create_file(
-                BLOG_PRIMARY_BRANCH,
+                &blog_repo.default_branch,
                 &format!(
                     "posts/inside-rust/{}-{}-prerelease.md",
                     chrono::Utc::now().date_naive().format("%Y-%m-%d"),
