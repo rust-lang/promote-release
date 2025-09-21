@@ -11,9 +11,10 @@
 //! finish in a reasonable amount of time.
 
 use crate::Context;
+use std::convert::TryFrom;
 use std::fmt::Write as FmtWrite;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use xz2::read::XzDecoder;
@@ -29,6 +30,8 @@ pub(crate) fn recompress_file(
     let gz_path = xz_path.with_extension("gz");
 
     let mut destinations: Vec<(&str, Box<dyn io::Write>)> = Vec::new();
+
+    let mut in_file = File::open(xz_path)?;
 
     // Produce gzip if explicitly enabled or the destination file doesn't exist.
     if recompress_gz || !gz_path.is_file() {
@@ -51,11 +54,14 @@ pub(crate) fn recompress_file(
     // parallel.
     let xz_recompressed = xz_path.with_extension("xz_recompressed");
     if recompress_xz {
+        let in_size32 = u32::try_from(in_file.seek(SeekFrom::End(0))?).unwrap_or(u32::MAX);
+        in_file.seek(SeekFrom::Start(0))?;
+        
         let mut filters = xz2::stream::Filters::new();
         let mut lzma_ops = xz2::stream::LzmaOptions::new_preset(9).unwrap();
         // This sets the overall dictionary size, which is also how much memory (baseline)
         // is needed for decompression.
-        lzma_ops.dict_size(128 * 1024 * 1024);
+        lzma_ops.dict_size(choose_xz_dictsize(in_size32));
         // Use the best match finder for compression ratio.
         lzma_ops.match_finder(xz2::stream::MatchFinder::BinaryTree4);
         lzma_ops.mode(xz2::stream::Mode::Normal);
@@ -92,7 +98,7 @@ pub(crate) fn recompress_file(
     // This code assumes that compression with `write_all` will never fail (i.e., we
     // can take arbitrary amounts of data as input). That seems like a reasonable
     // assumption though.
-    let mut decompressor = XzDecoder::new(File::open(xz_path)?);
+    let mut decompressor = XzDecoder::new(in_file);
     let mut buffer = vec![0u8; 4 * 1024 * 1024];
     let mut decompress_time = Duration::ZERO;
     let mut time_by_dest = vec![Duration::ZERO; destinations.len()];
@@ -213,4 +219,51 @@ impl Context {
         );
         Ok(())
     }
+}
+
+/// The maximum XZ dictionary size we're willing to choose. Rustup users will
+/// need at least this much free RAM to decompress the archive, and
+/// compression will require even more memory.
+const MAX_XZ_DICTSIZE: u32 = 128 * 1024 * 1024;
+
+/// Chooses the smallest XZ dictionary size that is at least as large as the
+/// file and will not be rounded by XZ, clipping it to the range of acceptable
+/// dictionary sizes.
+fn choose_xz_dictsize(sz: u32) -> u32 {
+    /// XZ's minimum dictionary size, which is 4 KiB.
+    const MIN_XZ_DICTSIZE: u32 = 4096;
+    const {
+        // This check is to prevent overflow further down the line
+        // regardless of the value of MAX_XZ_DICTSIZE.
+        assert!(
+            MAX_XZ_DICTSIZE <= (1024 + 512) * 1024 * 1024,
+            "XZ dictionary size only goes up to 1.5 GiB"
+        );
+    };
+    // If the size is beyond the extremes, clip and
+    // don't bother with any further calculations.
+    if sz <= MIN_XZ_DICTSIZE {
+        return MIN_XZ_DICTSIZE;
+    }
+    if sz >= MAX_XZ_DICTSIZE {
+        return MAX_XZ_DICTSIZE;
+    }
+    if sz.is_power_of_two() {
+        return sz;
+    }
+
+    // Copypasted from .isolate_highest_one().
+    let hi_one = sz & (1_u32 << 31).wrapping_shr(sz.leading_zeros());
+
+    // For a bitstring of the form 01x…, check if 011… is greater or equal.
+    let twinbit_form = hi_one | (hi_one >> 1);
+    if twinbit_form >= sz {
+        return twinbit_form;
+    }
+
+    // Otherwise, we go for the next power of two.
+    if hi_one << 1 >= MAX_XZ_DICTSIZE {
+        return MAX_XZ_DICTSIZE;
+    }
+    hi_one << 1
 }
