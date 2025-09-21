@@ -55,7 +55,7 @@ pub(crate) fn recompress_file(
         let mut lzma_ops = xz2::stream::LzmaOptions::new_preset(9).unwrap();
         // This sets the overall dictionary size, which is also how much memory (baseline)
         // is needed for decompression.
-        lzma_ops.dict_size(64 * 1024 * 1024);
+        lzma_ops.dict_size(128 * 1024 * 1024);
         // Use the best match finder for compression ratio.
         lzma_ops.match_finder(xz2::stream::MatchFinder::BinaryTree4);
         lzma_ops.mode(xz2::stream::Mode::Normal);
