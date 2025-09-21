@@ -110,6 +110,8 @@ pub(crate) fn recompress_file(
         format_compression_time(&mut compression_times, "xz", xz_duration)?;
     }
 
+    drop(in_file);
+
     print!("recompressed {}: {:.2?} total", xz_path.display(), file_start.elapsed());
     if let Some((decompress_time, _)) = dec_measurements {
         print!(" {:.2?} decompression", decompress_time);
