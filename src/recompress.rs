@@ -43,11 +43,12 @@ pub(crate) fn recompress_file(
     // Produce gzip if explicitly enabled or the destination file doesn't exist.
     if recompress_gz || !gz_path.is_file() {
         let gz_out = File::create(gz_path)?;
+        let mut gz_encoder = flate2::write::GzEncoder::new(gz_out, gz_compression_level);
         let mut gz_duration = [Duration::ZERO];
         dec_measurements = Some(decompress_and_write(
             &mut in_file,
             &mut dec_buf,
-            &mut [&mut flate2::write::GzEncoder::new(gz_out, gz_compression_level)],
+            &mut [&mut gz_encoder],
             &mut gz_duration,
         )?);
         let [gz_duration] = gz_duration;
@@ -68,14 +69,15 @@ pub(crate) fn recompress_file(
     if recompress_xz {
         let in_size = match dec_measurements {
             Some((_, size)) => size,
-            None => measure_compressed_file(&mut in_file, &mut dec_buf)?.1
+            None => measure_compressed_file(&mut in_file, &mut dec_buf)?.1,
         };
-        
+        let in_size = u32::try_from(in_size).unwrap_or(u32::MAX);
+
         let mut filters = xz2::stream::Filters::new();
         let mut lzma_ops = xz2::stream::LzmaOptions::new_preset(9).unwrap();
         // This sets the overall dictionary size, which is also how much memory (baseline)
         // is needed for decompression.
-        lzma_ops.dict_size(choose_xz_dictsize(u32::try_from(in_size).unwrap_or(u32::MAX)));
+        lzma_ops.dict_size(choose_xz_dictsize(in_size));
         // Use the best match finder for compression ratio.
         lzma_ops.match_finder(xz2::stream::MatchFinder::BinaryTree4);
         lzma_ops.mode(xz2::stream::Mode::Normal);
@@ -112,7 +114,11 @@ pub(crate) fn recompress_file(
 
     drop(in_file);
 
-    print!("recompressed {}: {:.2?} total", xz_path.display(), file_start.elapsed());
+    print!(
+        "recompressed {}: {:.2?} total",
+        xz_path.display(),
+        file_start.elapsed()
+    );
     if let Some((decompress_time, _)) = dec_measurements {
         print!(" {:.2?} decompression", decompress_time);
     }
@@ -165,11 +171,7 @@ fn measure_compressed_file(src: &mut impl Read, buf: &mut [u8]) -> io::Result<(D
 }
 
 fn format_compression_time(out: &mut String, name: &str, duration: Duration) -> std::fmt::Result {
-    write!(
-        out,
-        ", {:.2?} {} compression",
-        duration, name
-    )
+    write!(out, ", {:.2?} {} compression", duration, name)
 }
 
 /// Chooses the smallest XZ dictionary size that is at least as large as the
