@@ -16,10 +16,11 @@
 const MAX_XZ_DICTSIZE: u32 = 128 * 1024 * 1024;
 
 use crate::Context;
+use anyhow::Context as _;
 use std::convert::TryFrom;
 use std::fmt::Write as FmtWrite;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use xz2::read::XzDecoder;
@@ -34,7 +35,7 @@ pub(crate) fn recompress_file(
     let file_start = Instant::now();
     let gz_path = xz_path.with_extension("gz");
 
-    let mut in_file = File::open(xz_path)?;
+    let mut in_file = File::open(xz_path).with_context(|| "failed to open XZ-compressed input")?;
     let mut dec_buf = vec![0u8; 4 * 1024 * 1024];
     let mut compression_times = String::new();
 
@@ -48,11 +49,11 @@ pub(crate) fn recompress_file(
         dec_measurements = Some(decompress_and_write(
             &mut in_file,
             &mut dec_buf,
-            &mut [&mut gz_encoder],
+            &mut [("gz", &mut gz_encoder)],
             &mut gz_duration,
         )?);
         let [gz_duration] = gz_duration;
-        format_compression_time(&mut compression_times, "gz", gz_duration)?;
+        format_compression_time(&mut compression_times, "gz", gz_duration, None)?;
     };
 
     // xz recompression with more aggressive settings than we want to take the time
@@ -71,13 +72,13 @@ pub(crate) fn recompress_file(
             Some((_, size)) => size,
             None => measure_compressed_file(&mut in_file, &mut dec_buf)?.1,
         };
-        let in_size = u32::try_from(in_size).unwrap_or(u32::MAX);
+        let dictsize = choose_xz_dictsize(u32::try_from(in_size).unwrap_or(u32::MAX));
 
         let mut filters = xz2::stream::Filters::new();
         let mut lzma_ops = xz2::stream::LzmaOptions::new_preset(9).unwrap();
         // This sets the overall dictionary size, which is also how much memory (baseline)
         // is needed for decompression.
-        lzma_ops.dict_size(choose_xz_dictsize(in_size));
+        lzma_ops.dict_size(dictsize);
         // Use the best match finder for compression ratio.
         lzma_ops.match_finder(xz2::stream::MatchFinder::BinaryTree4);
         lzma_ops.mode(xz2::stream::Mode::Normal);
@@ -105,11 +106,11 @@ pub(crate) fn recompress_file(
         dec_measurements = Some(decompress_and_write(
             &mut in_file,
             &mut dec_buf,
-            &mut [&mut xz_encoder],
+            &mut [("xz", &mut xz_encoder)],
             &mut xz_duration,
         )?);
         let [xz_duration] = xz_duration;
-        format_compression_time(&mut compression_times, "xz", xz_duration)?;
+        format_compression_time(&mut compression_times, "xz", xz_duration, Some(dictsize))?;
     }
 
     drop(in_file);
@@ -136,17 +137,20 @@ pub(crate) fn recompress_file(
 /// durations and returns the total time taken by the decompressor and the total
 /// size of the decompressed stream.
 fn decompress_and_write(
-    src: &mut impl Read,
+    src: &mut (impl Read + Seek),
     buf: &mut [u8],
-    destinations: &mut [&mut dyn Write],
+    destinations: &mut [(&str, &mut dyn Write)],
     time_by_dst: &mut [Duration],
-) -> io::Result<(Duration, u64)> {
+) -> anyhow::Result<(Duration, u64)> {
+    src.rewind().with_context(|| "input file seek failed")?;
     let mut decompressor = XzDecoder::new(src);
     let mut decompress_time = Duration::ZERO;
     let mut total_length = 0_u64;
     loop {
         let start = Instant::now();
-        let length = decompressor.read(buf)?;
+        let length = decompressor
+            .read(buf)
+            .with_context(|| "XZ decompression failed")?;
         decompress_time += start.elapsed();
         total_length += length as u64;
         if length == 0 {
@@ -155,9 +159,11 @@ fn decompress_and_write(
         // This code assumes that compression with `write_all` will never fail (i.e.,
         // we can take arbitrary amounts of data as input). That seems like a
         // reasonable assumption though.
-        for (idx, destination) in destinations.iter_mut().enumerate() {
+        for (idx, (compname, destination)) in destinations.iter_mut().enumerate() {
             let start = std::time::Instant::now();
-            destination.write_all(&buf[..length])?;
+            destination
+                .write_all(&buf[..length])
+                .with_context(|| format!("{compname} compression failed"))?;
             time_by_dst[idx] += start.elapsed();
         }
     }
@@ -166,12 +172,33 @@ fn decompress_and_write(
 
 /// Calls `decompress_and_write` solely to measure the file's uncompressed size
 /// and the time taken by decompression.
-fn measure_compressed_file(src: &mut impl Read, buf: &mut [u8]) -> io::Result<(Duration, u64)> {
+fn measure_compressed_file(
+    src: &mut (impl Read + Seek),
+    buf: &mut [u8],
+) -> anyhow::Result<(Duration, u64)> {
     decompress_and_write(src, buf, &mut [], &mut [])
 }
 
-fn format_compression_time(out: &mut String, name: &str, duration: Duration) -> std::fmt::Result {
-    write!(out, ", {:.2?} {} compression", duration, name)
+fn format_compression_time(
+    out: &mut String,
+    name: &str,
+    duration: Duration,
+    dictsize: Option<u32>,
+) -> std::fmt::Result {
+    write!(out, ", {:.2?} {} compression", duration, name)?;
+    if let Some(mut dictsize) = dictsize {
+        let mut iprefix = 0;
+        while iprefix < 2 && dictsize & 1023 == 0 {
+            iprefix += 1;
+            dictsize >>= 10;
+        }
+        write!(
+            out,
+            " with {dictsize} {}B dictionary",
+            ["", "Ki", "Mi"][iprefix]
+        )?;
+    }
+    Ok(())
 }
 
 /// Chooses the smallest XZ dictionary size that is at least as large as the
@@ -275,7 +302,10 @@ impl Context {
                         let path = to_recompress.lock().unwrap().pop();
                         path
                     } {
-                        recompress_file(&xz_path, recompress_gz, compression_level, recompress_xz)?;
+                        recompress_file(&xz_path, recompress_gz, compression_level, recompress_xz)
+                            .with_context(|| {
+                                format!("failed to recompress {}", xz_path.display())
+                            })?;
                     }
 
                     Ok::<_, anyhow::Error>(())
