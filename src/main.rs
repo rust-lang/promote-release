@@ -273,6 +273,13 @@ impl Context {
         // important).
         self.tag_release(&rev, &mut signer)?;
 
+        // Redeploy the website to reload the new stable version
+        if let Some(mut github) = self.config.github() {
+            github
+                .token("rust-lang/www.rust-lang.org")?
+                .workflow_dispatch("main.yml", "master")?;
+        }
+
         Ok(())
     }
 
