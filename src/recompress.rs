@@ -201,9 +201,14 @@ fn format_compression_time(
 /// file and will not be rounded by XZ, clipping it to the range of acceptable
 /// dictionary sizes.
 ///
-/// XZ's dictionary sizes are the sum of one or two powers of two, giving the
-/// forms `2^n` and `2^n + 2^(n-1)`.
-fn choose_xz_dictsize(sz: u32) -> u32 {
+/// XZ's dictionary sizes are the sum of one or two powers of two. As such, this
+/// function amounts to finding for some `sz` the smallest integer `d` which
+/// upholds all of the following properties:
+/// - has the form `2^n` or `2^n + 2^(n-1)`
+/// - `d` ≥ minimum XZ dictionary size
+/// - `d` ≤ maximum XZ dictionary size
+/// - `d` ≥ `sz`, but only if `sz` ≤ maximum XZ dictionary size
+fn choose_xz_dictsize(mut sz: u32) -> u32 {
     /// XZ's minimum dictionary size, which is 4 KiB.
     const MIN_XZ_DICTSIZE: u32 = 4096;
     const {
@@ -214,22 +219,12 @@ fn choose_xz_dictsize(sz: u32) -> u32 {
             "XZ dictionary size only goes up to 1.5 GiB"
         );
     };
-    // If the size is beyond the extremes, clip and
-    // don't bother with any further calculations.
-    if sz <= MIN_XZ_DICTSIZE {
-        return MIN_XZ_DICTSIZE;
-    }
-    if sz >= MAX_XZ_DICTSIZE {
-        return MAX_XZ_DICTSIZE;
-    }
-
-    // Without this check, the twinbit form synthesis would choose excessive
-    // dictionary sizes for uncompressed data whose size is an exact power of two.
+    sz = sz.clamp(MIN_XZ_DICTSIZE, MAX_XZ_DICTSIZE);
     if sz.is_power_of_two() {
         return sz;
     }
 
-    // Copypasted from .isolate_most_significant_one().
+    // Copypasted from u32::isolate_most_significant_one() 'cause it's unstable.
     let hi_one = sz & (1_u32 << 31).wrapping_shr(sz.leading_zeros());
 
     // For a bitstring of the form 01x…, check if 0110…0 (the 2^n + 2^(n-1) form) is
@@ -243,10 +238,7 @@ fn choose_xz_dictsize(sz: u32) -> u32 {
     }
 
     // Otherwise, we go for the next power of two.
-    if hi_one << 1 >= MAX_XZ_DICTSIZE {
-        return MAX_XZ_DICTSIZE;
-    }
-    hi_one << 1
+    std::cmp::min(hi_one << 1, MAX_XZ_DICTSIZE)
 }
 
 impl Context {
