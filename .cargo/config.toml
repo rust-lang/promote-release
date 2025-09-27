@@ -1,0 +1,7 @@
+[build]
+# If a contributor has a shared target directory configured in their
+# ~/.cargo/config.toml, that setting has to be overridden to make sure the
+# container build can find the build output and put it into the container.
+# Not doing so results in a cryptic "no such file or directory" error in
+# run.sh.
+target-dir = "target"

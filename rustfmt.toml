@@ -1,0 +1,2 @@
+# Empty to ensure that Rustfmt doesn't accidentally pick up some other unrelated
+# rustfmt.toml and apply the wrong formatting rules.
