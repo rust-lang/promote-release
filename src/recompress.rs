@@ -45,14 +45,12 @@ pub(crate) fn recompress_file(
     if recompress_gz || !gz_path.is_file() {
         let gz_out = File::create(gz_path)?;
         let mut gz_encoder = flate2::write::GzEncoder::new(gz_out, gz_compression_level);
-        let mut gz_duration = [Duration::ZERO];
+        let mut gz_duration = Duration::ZERO;
         dec_measurements = Some(decompress_and_write(
             &mut in_file,
             &mut dec_buf,
-            &mut [("gz", &mut gz_encoder)],
-            &mut gz_duration,
+            &mut [("gz", &mut gz_encoder, &mut gz_duration)],
         )?);
-        let [gz_duration] = gz_duration;
         format_compression_time(&mut compression_times, "gz", gz_duration, None)?;
     };
 
@@ -102,14 +100,12 @@ pub(crate) fn recompress_file(
 
         let xz_out = File::create(&xz_recompressed)?;
         let mut xz_encoder = xz2::write::XzEncoder::new_stream(io::BufWriter::new(xz_out), stream);
-        let mut xz_duration = [Duration::ZERO];
+        let mut xz_duration = Duration::ZERO;
         dec_measurements = Some(decompress_and_write(
             &mut in_file,
             &mut dec_buf,
-            &mut [("xz", &mut xz_encoder)],
-            &mut xz_duration,
+            &mut [("xz", &mut xz_encoder, &mut xz_duration)],
         )?);
-        let [xz_duration] = xz_duration;
         format_compression_time(&mut compression_times, "xz", xz_duration, Some(dictsize))?;
     }
 
@@ -133,14 +129,13 @@ pub(crate) fn recompress_file(
 }
 
 /// Decompresses the given XZ stream and sends it to the given set of destinations.
-/// Writes the time taken by each individual destination to the given slice of
-/// durations and returns the total time taken by the decompressor and the total
-/// size of the decompressed stream.
+/// Writes the time taken by each individual destination to the corresponding tuple
+/// and returns the total time taken by the decompressor and the total size of the
+/// decompressed stream.
 fn decompress_and_write(
     src: &mut (impl Read + Seek),
     buf: &mut [u8],
-    destinations: &mut [(&str, &mut dyn Write)],
-    time_by_dst: &mut [Duration],
+    destinations: &mut [(&str, &mut dyn Write, &mut Duration)],
 ) -> anyhow::Result<(Duration, u64)> {
     src.rewind().with_context(|| "input file seek failed")?;
     let mut decompressor = XzDecoder::new(src);
@@ -159,12 +154,12 @@ fn decompress_and_write(
         // This code assumes that compression with `write_all` will never fail (i.e.,
         // we can take arbitrary amounts of data as input). That seems like a
         // reasonable assumption though.
-        for (idx, (compname, destination)) in destinations.iter_mut().enumerate() {
+        for (compname, destination, duration) in destinations.iter_mut() {
             let start = std::time::Instant::now();
             destination
                 .write_all(&buf[..length])
                 .with_context(|| format!("{compname} compression failed"))?;
-            time_by_dst[idx] += start.elapsed();
+            **duration += start.elapsed();
         }
     }
     Ok((decompress_time, total_length))
@@ -176,7 +171,7 @@ fn measure_compressed_file(
     src: &mut (impl Read + Seek),
     buf: &mut [u8],
 ) -> anyhow::Result<(Duration, u64)> {
-    decompress_and_write(src, buf, &mut [], &mut [])
+    decompress_and_write(src, buf, &mut [])
 }
 
 fn format_compression_time(
@@ -188,9 +183,10 @@ fn format_compression_time(
     write!(out, ", {:.2?} {} compression", duration, name)?;
     if let Some(mut dictsize) = dictsize {
         let mut iprefix = 0;
-        while iprefix < 2 && dictsize & 1023 == 0 {
+        // Divide by 1024 until the result would be inexact or we run out of prefixes.
+        while iprefix < 2 && dictsize.is_multiple_of(1024) {
             iprefix += 1;
-            dictsize >>= 10;
+            dictsize /= 1024;
         }
         write!(
             out,
@@ -204,6 +200,9 @@ fn format_compression_time(
 /// Chooses the smallest XZ dictionary size that is at least as large as the
 /// file and will not be rounded by XZ, clipping it to the range of acceptable
 /// dictionary sizes.
+///
+/// XZ's dictionary sizes are the sum of one or two powers of two, giving the
+/// forms `2^n` and `2^n + 2^(n-1)`.
 fn choose_xz_dictsize(sz: u32) -> u32 {
     /// XZ's minimum dictionary size, which is 4 KiB.
     const MIN_XZ_DICTSIZE: u32 = 4096;
@@ -223,14 +222,21 @@ fn choose_xz_dictsize(sz: u32) -> u32 {
     if sz >= MAX_XZ_DICTSIZE {
         return MAX_XZ_DICTSIZE;
     }
+
+    // Without this check, the twinbit form synthesis would choose excessive
+    // dictionary sizes for uncompressed data whose size is an exact power of two.
     if sz.is_power_of_two() {
         return sz;
     }
 
-    // Copypasted from .isolate_highest_one().
+    // Copypasted from .isolate_most_significant_one().
     let hi_one = sz & (1_u32 << 31).wrapping_shr(sz.leading_zeros());
 
-    // For a bitstring of the form 01x…, check if 011… is greater or equal.
+    // For a bitstring of the form 01x…, check if 0110…0 (the 2^n + 2^(n-1) form) is
+    // greater or equal. For example, for sz = 17M (16M + 1M), hi_one will be 16M and
+    // twinbit_form will be 24M (16M + 8M) and the check will succeed, whereas for
+    // sz = 25M (16M + 8M + 1M), twinbit_form will also be 24M (16M + 8M) and the check
+    // will fail.
     let twinbit_form = hi_one | (hi_one >> 1);
     if twinbit_form >= sz {
         return twinbit_form;
