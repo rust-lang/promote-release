@@ -224,7 +224,7 @@ fn choose_xz_dictsize(mut sz: u32) -> u32 {
         return sz;
     }
 
-    // Copypasted from u32::isolate_most_significant_one() 'cause it's unstable.
+    // FIXME: u32::isolate_highest_one() once stable, https://github.com/rust-lang/rust/issues/136909.
     let hi_one = sz & (1_u32 << 31).wrapping_shr(sz.leading_zeros());
 
     // For a bitstring of the form 01x…, check if 0110…0 (the 2^n + 2^(n-1) form) is
