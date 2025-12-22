@@ -507,36 +507,39 @@ impl Context {
             fs::create_dir_all(&rustc_docs)?;
 
             // Construct the path that contains the documentation inside the tarball.
-            let tarball_dir = format!("{tarball_prefix}/rustc-docs/share/doc/rust/html");
-            let tarball_dir_new = format!("{tarball_dir}/rustc");
+            let tarball_dir_base = format!("{tarball_prefix}/rustc-docs/share/doc/rust/html");
 
-            if Command::new("tar")
-                .arg("tf")
-                .arg(&tarball)
-                .arg(&tarball_dir_new)
-                .current_dir(&rustc_docs)
-                .output()?
-                .status
-                .success()
-            {
-                // Unpack the rustc documentation into the new directory.
-                // // Touch all files as well (see above for why).
-                run(Command::new("tar")
-                    .arg("xfm")
+            // NOTE: The following logic is to accommodate the 2 latest `rustc-docs` structures:
+            // - New path: `share/doc/rust/html/rustc-docs/...`
+            // - Old path (fallback): `share/doc/rust/html/rustc/...`
+            let mut tarball_dir = None;
+            for subdir in ["rustc-docs", "rustc"] {
+                let candidate = format!("{tarball_dir_base}/{subdir}");
+                if Command::new("tar")
+                    .arg("tf")
                     .arg(&tarball)
-                    .arg("--strip-components=7")
-                    .arg(&tarball_dir_new)
-                    .current_dir(&rustc_docs))?;
-            } else {
-                // Unpack the rustc documentation into the new directory.
-                // Touch all files as well (see above for why).
-                run(Command::new("tar")
-                    .arg("xfm")
-                    .arg(&tarball)
-                    .arg("--strip-components=6")
-                    .arg(&tarball_dir)
-                    .current_dir(&rustc_docs))?;
+                    .arg(&candidate)
+                    .current_dir(&rustc_docs)
+                    .output()?
+                    .status
+                    .success()
+                {
+                    // The candidate directory exists in the tarball.
+                    tarball_dir = Some(candidate);
+                    break;
+                }
             }
+            let Some(tarball_dir) = tarball_dir else {
+                anyhow::bail!("could not find the rustc documentation in the tarball");
+            };
+            // Unpack the rustc documentation into the new directory.
+            // Touch all files as well (see above for why).
+            run(Command::new("tar")
+                .arg("xfm")
+                .arg(&tarball)
+                .arg("--strip-components=7")
+                .arg(&tarball_dir)
+                .current_dir(&rustc_docs))?;
         }
 
         // Upload this to `/doc/$channel`
