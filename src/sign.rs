@@ -1,11 +1,11 @@
 use anyhow::Error;
 use chrono::Utc;
 use pgp::{
+    Deserializable, SignedSecretKey,
     armor::BlockType,
     crypto::hash::HashAlgorithm,
     packet::{self, Packet, SignatureConfig, SignatureType, SignatureVersion},
     types::{KeyTrait, SecretKeyTrait},
-    Deserializable, SignedSecretKey,
 };
 use rayon::prelude::*;
 use sha2::Digest;

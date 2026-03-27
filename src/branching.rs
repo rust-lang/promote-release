@@ -1,6 +1,6 @@
 use crate::{
-    github::{FullCommitData, RepositoryClient},
     Context,
+    github::{FullCommitData, RepositoryClient},
 };
 
 impl Context {

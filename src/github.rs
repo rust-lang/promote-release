@@ -1,6 +1,6 @@
 use crate::curl_helper::BodyExt;
 use anyhow::Context;
-use base64::prelude::{Engine as _, BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD};
+use base64::prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD, Engine as _};
 use curl::easy::Easy;
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use sha2::Digest;
