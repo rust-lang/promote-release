@@ -297,11 +297,11 @@ impl Context {
             for entry in archive.entries()? {
                 let entry = entry?;
                 let path = entry.path()?;
-                if let Some(path) = path.iter().nth(1) {
-                    if path == Path::new("version") {
-                        version_file = Some(entry);
-                        break;
-                    }
+                if let Some(path) = path.iter().nth(1)
+                    && path == Path::new("version")
+                {
+                    version_file = Some(entry);
+                    break;
                 }
             }
             if let Some(mut entry) = version_file {

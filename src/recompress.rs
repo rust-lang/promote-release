@@ -293,6 +293,7 @@ impl Context {
             let mut tasks = Vec::new();
             for _ in 0..self.config.num_threads {
                 tasks.push(s.spawn(|| {
+                    #[allow(clippy::let_and_return)]
                     while let Some(xz_path) = {
                         // Extra block is needed to make sure the lock guard drops before we enter the
                         // loop iteration, because while-let is desugared to a loop + match, and match
