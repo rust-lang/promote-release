@@ -1010,7 +1010,7 @@ impl Context {
         cmd
     }
 
-    fn download_top_level_manifest(&mut self) -> Result<toml::Value, Error> {
+    fn download_top_level_manifest(&mut self) -> Result<toml::Table, Error> {
         let url = format!(
             "{}/{}/channel-rust-{}.toml",
             self.config.upload_addr, self.config.upload_dir, self.config.channel
