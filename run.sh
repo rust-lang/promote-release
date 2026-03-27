@@ -3,7 +3,6 @@
 # system. This requires docker and docker-compose to be installed.
 
 set -euo pipefail
-IFS=$'\n\t'
 
 if [[ "$#" -lt 1 ]] || [[ "$#" -gt 2 ]]; then
     echo "Usage: $0 <channel> [commit]"
@@ -12,7 +11,13 @@ fi
 channel="$1"
 override_commit="${2-}"
 
-container_id="$(docker compose ps -q local)"
+if command -v docker-compose 2>&1; then
+    compose_cmd="docker-compose"
+else
+    compose_cmd="docker compose"
+fi
+
+container_id="$($compose_cmd ps -q local)"
 if [[ "${container_id}" == "" ]]; then
     container_status="missing"
 else
@@ -31,4 +36,4 @@ fi
 cargo build --release
 
 # Run the command inside the docker environment.
-docker compose exec -T local /src/local/run.sh "${channel}" "${override_commit}"
+$compose_cmd exec -T local /src/local/run.sh "${channel}" "${override_commit}"
