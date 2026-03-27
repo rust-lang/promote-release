@@ -1,5 +1,6 @@
 use crate::curl_helper::BodyExt;
 use anyhow::Context;
+use base64::prelude::{Engine as _, BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD};
 use curl::easy::Easy;
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use sha2::Digest;
@@ -39,7 +40,6 @@ impl Github {
         let header = r#"{"alg":"RS256","typ":"JWT"}"#;
         let payload = serde_json::to_string(&payload).unwrap();
 
-        let encoding = base64::URL_SAFE_NO_PAD;
         let signature = self
             .key
             .sign(
@@ -47,17 +47,17 @@ impl Github {
                 &sha2::Sha256::new()
                     .chain_update(format!(
                         "{}.{}",
-                        base64::encode_config(header, encoding),
-                        base64::encode_config(&payload, encoding),
+                        BASE64_URL_SAFE_NO_PAD.encode(header),
+                        BASE64_URL_SAFE_NO_PAD.encode(&payload),
                     ))
                     .finalize(),
             )
             .unwrap();
         format!(
             "{}.{}.{}",
-            base64::encode_config(header, encoding),
-            base64::encode_config(&payload, encoding),
-            base64::encode_config(signature, encoding),
+            BASE64_URL_SAFE_NO_PAD.encode(header),
+            BASE64_URL_SAFE_NO_PAD.encode(&payload),
+            BASE64_URL_SAFE_NO_PAD.encode(signature),
         )
     }
 
@@ -309,7 +309,7 @@ impl RepositoryClient<'_> {
             .with_body(Request {
                 branch,
                 message: "Creating file via promote-release automation",
-                content: &base64::encode(content),
+                content: &BASE64_STANDARD.encode(content),
             })
             .send()?;
         Ok(())
@@ -502,7 +502,7 @@ impl GitFile {
     pub(crate) fn content(&self) -> anyhow::Result<String> {
         if let GitFile::File { encoding, content } = self {
             assert_eq!(encoding, "base64");
-            Ok(String::from_utf8(base64::decode(content.trim())?)?)
+            Ok(String::from_utf8(BASE64_STANDARD.decode(content.trim())?)?)
         } else {
             panic!("content() on {:?}", self);
         }
