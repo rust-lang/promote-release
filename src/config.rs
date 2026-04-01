@@ -1,7 +1,7 @@
+use crate::Context;
 use crate::discourse::Discourse;
 use crate::fastly::Fastly;
 use crate::github::Github;
-use crate::Context;
 use anyhow::{Context as _, Error};
 use std::env::VarError;
 use std::str::FromStr;

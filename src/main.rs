@@ -27,8 +27,6 @@ use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
 use github::{CreateTag, Github};
-use rand::prelude::Distribution;
-use rand::thread_rng;
 use serde::Deserialize;
 use tempfile::NamedTempFile;
 
@@ -299,11 +297,11 @@ impl Context {
             for entry in archive.entries()? {
                 let entry = entry?;
                 let path = entry.path()?;
-                if let Some(path) = path.iter().nth(1) {
-                    if path == Path::new("version") {
-                        version_file = Some(entry);
-                        break;
-                    }
+                if let Some(path) = path.iter().nth(1)
+                    && path == Path::new("version")
+                {
+                    version_file = Some(entry);
+                    break;
                 }
             }
             if let Some(mut entry) = version_file {
@@ -635,7 +633,7 @@ impl Context {
                 "Items": paths,
                 "Quantity": paths.len(),
             },
-            "CallerReference": format!("rct-{}", rand::random::<usize>()),
+            "CallerReference": format!("rct-{}", rand::random::<u64>()),
         })
         .to_string();
         let dst = self.work.join("payload.json");
@@ -665,7 +663,9 @@ impl Context {
             None => {
                 println!();
                 println!("WARNING! Skipped Fastly invalidation of: {paths:?}");
-                println!("Set PROMOTE_RELEASE_FASTLY_API_TOKEN and PROMOTE_RELEASE_FASTLY_SERVICE_ID if you want to invalidate Fastly");
+                println!(
+                    "Set PROMOTE_RELEASE_FASTLY_API_TOKEN and PROMOTE_RELEASE_FASTLY_SERVICE_ID if you want to invalidate Fastly"
+                );
                 println!();
                 return Ok(());
             }
@@ -691,7 +691,7 @@ impl Context {
                     eprintln!("warning: failed to update manifests.txt, retrying...");
                     attempts += 1;
 
-                    let delay = rand::distributions::Uniform::new(1, 10).sample(&mut thread_rng());
+                    let delay = rand::random_range(1..10);
                     std::thread::sleep(Duration::from_secs(delay));
                 }
             }
@@ -1010,7 +1010,7 @@ impl Context {
         cmd
     }
 
-    fn download_top_level_manifest(&mut self) -> Result<toml::Value, Error> {
+    fn download_top_level_manifest(&mut self) -> Result<toml::Table, Error> {
         let url = format!(
             "{}/{}/channel-rust-{}.toml",
             self.config.upload_addr, self.config.upload_dir, self.config.channel
