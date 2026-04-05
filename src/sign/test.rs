@@ -1,5 +1,4 @@
-use pgp::composed::{KeyType, SecretKeyParamsBuilder, SignedSecretKey};
-use pgp::types::SecretKeyTrait;
+use pgp::composed::{KeyType, SecretKeyParamsBuilder};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -18,7 +17,6 @@ fn test_signer(parent_dir: &Path) -> (Signer, NamedTempFile) {
     key_params
         .key_type(KeyType::Rsa(4096))
         .can_sign(true)
-        .can_create_certificates(false)
         .passphrase(Some(password.to_owned()))
         .primary_user_id("Me <me@example.com>".into());
     let secret_key_params = key_params
@@ -27,11 +25,9 @@ fn test_signer(parent_dir: &Path) -> (Signer, NamedTempFile) {
 
     eprintln!("Generating secret key...");
 
-    let secret_key = secret_key_params
-        .generate()
+    let signed_secret_key = secret_key_params
+        .generate(&mut rand_pgp::thread_rng())
         .expect("Failed to generate a plain key.");
-
-    let signed_secret_key: SignedSecretKey = secret_key.sign(|| password.to_owned()).unwrap();
 
     eprintln!("Serializing secret key...");
 
@@ -41,9 +37,7 @@ fn test_signer(parent_dir: &Path) -> (Signer, NamedTempFile) {
 
     let mut pubkey = NamedTempFile::new_in(parent_dir).unwrap();
     signed_secret_key
-        .public_key()
-        .sign(&signed_secret_key, || password.to_owned())
-        .unwrap()
+        .to_public_key()
         .to_armored_writer(&mut pubkey, Default::default())
         .unwrap();
 

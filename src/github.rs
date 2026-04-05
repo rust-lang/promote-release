@@ -43,7 +43,7 @@ impl Github {
         let signature = self
             .key
             .sign(
-                rsa::pkcs1v15::Pkcs1v15Sign::new::<sha2::Sha256>(),
+                rsa::pkcs1v15::Pkcs1v15Sign::new::<rsa::sha2::Sha256>(),
                 &sha2::Sha256::new()
                     .chain_update(format!(
                         "{}.{}",

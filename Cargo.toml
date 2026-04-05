@@ -19,10 +19,12 @@ rand = "0.10"
 xz2 = "0.1"
 anyhow = "1.0.32"
 rayon = "1.4.0"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4.2"
-pgp = "0.10"
-rsa = "0.8"
+pgp = { version = "0.19", default-features = false }
+# pgp still depends on rand v0.8, but does not re-export it. So we need our own dependency on it.
+rand_pgp = { version = "0.8", package = "rand" }
+rsa = { version = "0.9.10", features = ["sha2"] }
 base64 = "0.22"
 chrono = "0.4.19"
 git2 = "0.20.4"
