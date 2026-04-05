@@ -26,14 +26,21 @@ pub(crate) struct Signer {
 }
 
 impl Signer {
-    pub(crate) fn new(config: &Config) -> Result<Self, Error> {
-        let mut key_file = File::open(&config.gpg_key_file)?;
-        let gpg_password = std::fs::read_to_string(&config.gpg_password_file)?;
+    fn new_inner(gpg_key_file: &Path, gpg_password_file: &Path) -> Result<Self, Error> {
+        let mut key_file = File::open(gpg_key_file)?;
+        let gpg_password = std::fs::read_to_string(gpg_password_file)?;
         Ok(Signer {
             gpg_key: SignedSecretKey::from_armor_single(&mut key_file)?.0,
             gpg_password,
             sha256_checksum_cache: HashMap::new(),
         })
+    }
+
+    pub(crate) fn new(config: &Config) -> Result<Self, Error> {
+        Self::new_inner(
+            Path::new(&config.gpg_key_file),
+            Path::new(&config.gpg_password_file),
+        )
     }
 
     pub(crate) fn override_checksum_cache(&mut self, new: HashMap<PathBuf, String>) {
@@ -153,7 +160,7 @@ impl Signer {
         username: &str,
         email: &str,
         message: &str,
-    ) -> Result<String, Error> {
+    ) -> Result<(String, chrono::DateTime<chrono::Utc>), Error> {
         let key_function = || self.gpg_password.trim().to_string();
 
         let now = chrono::Utc::now();
@@ -202,7 +209,7 @@ impl Signer {
         pgp::armor::write(&content, BlockType::Signature, &mut dest, None)?;
         message.push_str(&String::from_utf8(dest)?);
 
-        Ok(message)
+        Ok((message, now))
     }
 }
 
@@ -223,3 +230,6 @@ fn add_suffix(path: &Path, suffix: &str) -> PathBuf {
     path.set_file_name(file_name);
     path
 }
+
+#[cfg(all(test, unix))]
+mod test;

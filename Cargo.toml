@@ -33,3 +33,10 @@ hyper-util = { version = "0.1.20", features = ["http1", "server", "server-gracef
 num_cpus = "1.13.0"
 http-body-util = { version = "0.1.3", features = ["full"] }
 bytes = "1.11.1"
+
+# Optimize select dependencies to speed up dev build tests
+# The num-bigint crate is used to generate an RSA key for the signature tests
+# which is slow (~1.5 minutes vs. 4 seconds) in debug mode.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+overflow-checks = false

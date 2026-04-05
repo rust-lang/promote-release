@@ -846,7 +846,8 @@ impl Context {
         github.token(repository)?.tag(CreateTag {
             commit,
             tag_name: &tag_name,
-            message: &message,
+            // FIXME: we need to pass the timestamp too
+            message: &message.0,
             tagger_name: username,
             tagger_email: email,
         })?;
