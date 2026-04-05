@@ -835,7 +835,7 @@ impl Context {
         let tag_name = version.to_owned();
         let username = "rust-lang/promote-release";
         let email = "release-team@rust-lang.org";
-        let message = signer.git_signed_tag(
+        let (message, timestamp) = signer.git_signed_tag(
             commit,
             &tag_name,
             username,
@@ -846,10 +846,10 @@ impl Context {
         github.token(repository)?.tag(CreateTag {
             commit,
             tag_name: &tag_name,
-            // FIXME: we need to pass the timestamp too
-            message: &message.0,
+            message: &message,
             tagger_name: username,
             tagger_email: email,
+            timestamp,
         })?;
 
         Ok(())
