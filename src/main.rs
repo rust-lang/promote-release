@@ -835,7 +835,7 @@ impl Context {
         let tag_name = version.to_owned();
         let username = "rust-lang/promote-release";
         let email = "release-team@rust-lang.org";
-        let message = signer.git_signed_tag(
+        let (message, timestamp) = signer.git_signed_tag(
             commit,
             &tag_name,
             username,
@@ -849,6 +849,7 @@ impl Context {
             message: &message,
             tagger_name: username,
             tagger_email: email,
+            timestamp,
         })?;
 
         Ok(())

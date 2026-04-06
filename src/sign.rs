@@ -1,11 +1,10 @@
-use anyhow::Error;
-use chrono::Utc;
+use anyhow::{Context, Error};
 use pgp::{
-    Deserializable, SignedSecretKey,
     armor::BlockType,
+    composed::{Deserializable, SignedSecretKey},
     crypto::hash::HashAlgorithm,
-    packet::{self, Packet, SignatureConfig, SignatureType, SignatureVersion},
-    types::{KeyTrait, SecretKeyTrait},
+    packet::{self, Packet, SignatureConfig, SignatureType},
+    types::{KeyDetails, Timestamp},
 };
 use rayon::prelude::*;
 use sha2::Digest;
@@ -21,19 +20,26 @@ use crate::config::Config;
 
 pub(crate) struct Signer {
     gpg_key: SignedSecretKey,
-    gpg_password: String,
+    gpg_password: pgp::types::Password,
     sha256_checksum_cache: HashMap<PathBuf, String>,
 }
 
 impl Signer {
-    pub(crate) fn new(config: &Config) -> Result<Self, Error> {
-        let mut key_file = File::open(&config.gpg_key_file)?;
-        let gpg_password = std::fs::read_to_string(&config.gpg_password_file)?;
+    fn new_inner(gpg_key_file: &Path, gpg_password_file: &Path) -> Result<Self, Error> {
+        let mut key_file = File::open(gpg_key_file)?;
+        let gpg_password = std::fs::read_to_string(gpg_password_file)?;
         Ok(Signer {
             gpg_key: SignedSecretKey::from_armor_single(&mut key_file)?.0,
-            gpg_password,
+            gpg_password: pgp::types::Password::from(gpg_password.trim().to_owned()),
             sha256_checksum_cache: HashMap::new(),
         })
+    }
+
+    pub(crate) fn new(config: &Config) -> Result<Self, Error> {
+        Self::new_inner(
+            Path::new(&config.gpg_key_file),
+            Path::new(&config.gpg_password_file),
+        )
     }
 
     pub(crate) fn override_checksum_cache(&mut self, new: HashMap<PathBuf, String>) {
@@ -118,28 +124,30 @@ impl Signer {
     }
 
     fn gpg_sign(&self, path: &Path, data: &[u8]) -> Result<(), Error> {
-        let key_function = || self.gpg_password.trim().to_string();
-        let now = Utc::now();
-
         let pubkey = self.gpg_key.public_key();
-        let sign_config = SignatureConfig {
-            version: SignatureVersion::V4,
-            typ: SignatureType::Binary,
-            pub_alg: self.gpg_key.algorithm(),
-            hash_alg: HashAlgorithm::SHA2_512,
-            issuer: Some(pubkey.key_id()),
-            created: Some(now),
-            hashed_subpackets: vec![
-                packet::Subpacket::regular(packet::SubpacketData::SignatureCreationTime(now)),
-                packet::Subpacket::regular(packet::SubpacketData::Issuer(pubkey.key_id())),
-            ],
-            unhashed_subpackets: Vec::new(),
-        };
-
+        let mut sign_config = SignatureConfig::v4(
+            SignatureType::Binary,
+            self.gpg_key.algorithm(),
+            HashAlgorithm::Sha512,
+        );
+        sign_config
+            .hashed_subpackets
+            .push(packet::Subpacket::regular(
+                packet::SubpacketData::SignatureCreationTime(Timestamp::now()),
+            )?);
+        sign_config
+            .hashed_subpackets
+            .push(packet::Subpacket::regular(
+                // FIXME: Should we also include the IssuerFingerprint?
+                packet::SubpacketData::IssuerKeyId(pubkey.legacy_key_id()),
+            )?);
         let mut dest = File::create(add_suffix(path, ".asc"))?;
 
-        let content = Packet::from(sign_config.sign(&self.gpg_key, key_function, data)?);
-        pgp::armor::write(&content, BlockType::Signature, &mut dest, None)?;
+        let content =
+            Packet::from(sign_config.sign(&self.gpg_key.primary_key, &self.gpg_password, data)?);
+        // We include a CRC24 checksum because pgp v0.10 did (trying to avoid functional changes
+        // during upgrade).
+        pgp::armor::write(&content, BlockType::Signature, &mut dest, None, true)?;
 
         Ok(())
     }
@@ -153,9 +161,7 @@ impl Signer {
         username: &str,
         email: &str,
         message: &str,
-    ) -> Result<String, Error> {
-        let key_function = || self.gpg_password.trim().to_string();
-
+    ) -> Result<(String, chrono::DateTime<chrono::Utc>), Error> {
         let now = chrono::Utc::now();
         // This was discovered by running git tag with a custom gpg bin set and
         // capturing the signed text; we avoid calling out to gpg from within
@@ -177,32 +183,39 @@ impl Signer {
         // The packets here match the ones used by git when signing tags; it's
         // not necessarily the case that they're exactly what's needed but this
         // seems to work well in practice.
-        let sign_config = SignatureConfig {
-            version: SignatureVersion::V4,
-            typ: SignatureType::Binary,
-            pub_alg: self.gpg_key.algorithm(),
-            hash_alg: HashAlgorithm::SHA2_512,
-            issuer: Some(pubkey.key_id()),
-            created: Some(now),
-            hashed_subpackets: vec![
-                packet::Subpacket::regular(packet::SubpacketData::IssuerFingerprint(
-                    pgp::types::KeyVersion::V4,
-                    self.gpg_key.public_key().fingerprint().into(),
+        let mut sign_config = SignatureConfig::v4(
+            SignatureType::Binary,
+            self.gpg_key.algorithm(),
+            HashAlgorithm::Sha512,
+        );
+        sign_config
+            .hashed_subpackets
+            .push(packet::Subpacket::regular(
+                packet::SubpacketData::IssuerFingerprint(pubkey.fingerprint()),
+            )?);
+        sign_config
+            .hashed_subpackets
+            .push(packet::Subpacket::regular(
+                packet::SubpacketData::SignatureCreationTime(Timestamp::from_secs(
+                    now.timestamp().try_into().context("timestamp too large")?,
                 )),
-                packet::Subpacket::regular(packet::SubpacketData::SignatureCreationTime(now)),
-            ],
-            unhashed_subpackets: vec![packet::Subpacket::regular(packet::SubpacketData::Issuer(
-                pubkey.key_id(),
-            ))],
-        };
+            )?);
+        sign_config
+            .unhashed_subpackets
+            .push(packet::Subpacket::regular(
+                packet::SubpacketData::IssuerKeyId(pubkey.legacy_key_id()),
+            )?);
 
         let mut dest = Vec::new();
-        let content =
-            Packet::from(sign_config.sign(&self.gpg_key, key_function, payload.as_bytes())?);
-        pgp::armor::write(&content, BlockType::Signature, &mut dest, None)?;
+        let content = Packet::from(sign_config.sign(
+            &self.gpg_key.primary_key,
+            &self.gpg_password,
+            payload.as_bytes(),
+        )?);
+        pgp::armor::write(&content, BlockType::Signature, &mut dest, None, true)?;
         message.push_str(&String::from_utf8(dest)?);
 
-        Ok(message)
+        Ok((message, now))
     }
 }
 
@@ -223,3 +236,6 @@ fn add_suffix(path: &Path, suffix: &str) -> PathBuf {
     path.set_file_name(file_name);
     path
 }
+
+#[cfg(all(test, unix))]
+mod test;

@@ -43,7 +43,7 @@ impl Github {
         let signature = self
             .key
             .sign(
-                rsa::pkcs1v15::Pkcs1v15Sign::new::<sha2::Sha256>(),
+                rsa::pkcs1v15::Pkcs1v15Sign::new::<rsa::sha2::Sha256>(),
                 &sha2::Sha256::new()
                     .chain_update(format!(
                         "{}.{}",
@@ -147,6 +147,7 @@ impl RepositoryClient<'_> {
         struct CreateTagTaggerInternal<'a> {
             name: &'a str,
             email: &'a str,
+            date: String,
         }
 
         #[derive(serde::Deserialize)]
@@ -167,6 +168,8 @@ impl RepositoryClient<'_> {
             tagger: CreateTagTaggerInternal {
                 name: tag.tagger_name,
                 email: tag.tagger_email,
+                // ISO 8601 format
+                date: tag.timestamp.format("%Y-%m-%dT%H:%M:%S%Z").to_string(),
             },
         };
         let created = self
@@ -521,6 +524,7 @@ pub(crate) struct CreateTag<'a> {
     pub(crate) message: &'a str,
     pub(crate) tagger_name: &'a str,
     pub(crate) tagger_email: &'a str,
+    pub(crate) timestamp: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(serde::Deserialize)]
