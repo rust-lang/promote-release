@@ -180,15 +180,6 @@ impl Context {
 
         self.assert_all_components_present()?;
 
-        // Produce a full set of artifacts so that pruning works correctly.
-        //
-        // Nightly (1.71+) supports this upstream without the extra recompression, see
-        // https://github.com/rust-lang/rust/pull/110436. We expect that this snippet can be fully
-        // dropped once that PR hits stable.
-        if self.config.channel != Channel::Nightly {
-            self.recompress(&self.dl_dir())?;
-        }
-
         // Ok we've now determined that a release needs to be done.
 
         let mut signer = Signer::new(&self.config)?;
@@ -208,9 +199,7 @@ impl Context {
 
         // Generate recompressed artifacts from the input set. This invalidates signatures etc
         // produced in the earlier step so we'll need to re-run the manifest building.
-        if self.config.channel == Channel::Nightly {
-            self.recompress(&self.dl_dir())?;
-        }
+        self.recompress(&self.dl_dir())?;
 
         // Since we recompressed, need to clear out the checksum cache.
         build_manifest.clear_checksum_cache()?;
