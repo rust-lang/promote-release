@@ -169,7 +169,7 @@ impl RepositoryClient<'_> {
                 name: tag.tagger_name,
                 email: tag.tagger_email,
                 // ISO 8601 format
-                date: tag.timestamp.format("%Y-%m-%dT%H:%M:%S%Z").to_string(),
+                date: tag.timestamp.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
             },
         };
         let created = self
