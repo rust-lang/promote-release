@@ -784,7 +784,7 @@ impl Context {
             // Once we've tagged rustc, kick off a thanks workflow run.
             github
                 .token("rust-lang/thanks")?
-                .workflow_dispatch("ci.yml", "master")?;
+                .workflow_dispatch("ci.yml", "main")?;
 
             if let Some(cargo_repo) = self.config.cargo_tag_repository.clone() {
                 let cargo_version = self
