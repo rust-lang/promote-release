@@ -292,14 +292,19 @@ impl Config {
             .map(|url| format!("You can leave feedback on the [internals thread]({url})."))
             .unwrap_or_default();
         let prefix = if for_blog {
+            let date_path = chrono::Utc::now().date_naive().format("%Y/%m/%d");
             format!(
-                r#"---
-layout: post
-title: "{} pre-release testing"
-author: Release automation
-team: The Release Team <https://www.rust-lang.org/governance/teams/release>
----{}"#,
-                release, "\n\n",
+                r#"+++
+path = "inside-rust/{date_path}/{release}-prerelease"
+title = "{release} pre-release testing"
+authors = ["Release automation"]
+
+[extra]
+team = "the Release team"
+team_url = "https://www.rust-lang.org/governance/teams/infra#team-release"
++++
+
+"#,
             )
         } else {
             String::new()
@@ -310,7 +315,7 @@ team: The Release Team <https://www.rust-lang.org/governance/teams/release>
 
 You can try it out locally by running:
 
-```plain
+```
 RUSTUP_DIST_SERVER=https://dev-static.rust-lang.org rustup update stable
 ```
 
@@ -323,7 +328,7 @@ we'd love your feedback [on this GitHub issue][feedback].
 
 [relnotes]: {release_notes_url}
 [feedback]: https://github.com/rust-lang/release-team/issues/16
-    "
+"
         ))
     }
 }

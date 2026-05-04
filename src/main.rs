@@ -905,11 +905,7 @@ impl Context {
             let blog_repo = token.repository()?;
             token.create_file(
                 &blog_repo.default_branch,
-                &format!(
-                    "posts/inside-rust/{}-{}-prerelease.md",
-                    chrono::Utc::now().date_naive().format("%Y-%m-%d"),
-                    version,
-                ),
+                &format!("content/inside-rust/{version}-prerelease.md"),
                 &blog_contents,
             )?;
         } else if let Some(pr) = self.config.blog_pr {
