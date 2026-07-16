@@ -323,8 +323,7 @@ The index is <https://dev-static.rust-lang.org/dist/{archive_date}/index.html>.
 
 {internals}
 
-The release team is also thinking about changes to our pre-release process:
-we'd love your feedback [on this GitHub issue][feedback].
+General feedback about our pre-release process is welcome [on this GitHub issue][feedback].
 
 [relnotes]: {release_notes_url}
 [feedback]: https://github.com/rust-lang/release-team/issues/16
