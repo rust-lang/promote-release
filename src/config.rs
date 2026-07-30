@@ -78,7 +78,7 @@ impl FromStr for Action {
     }
 }
 
-pub(crate) struct Config {
+pub struct RustcConfig {
     /// This is the action we're expecting to take.
     pub(crate) action: Action,
 
@@ -211,8 +211,8 @@ pub(crate) struct Config {
     pub(crate) invalidate_fastly: bool,
 }
 
-impl Config {
-    pub(crate) fn from_env() -> Result<Self, Error> {
+impl RustcConfig {
+    pub fn from_env() -> Result<Self, Error> {
         Ok(Self {
             action: default_env("ACTION", Action::PromoteRelease)?,
             bypass_startup_checks: bool_env("BYPASS_STARTUP_CHECKS")?,

@@ -19,7 +19,7 @@ use std::time::Duration;
 use std::{collections::HashSet, env};
 
 use crate::build_manifest::BuildManifest;
-use crate::config::{Channel, Config};
+use crate::config::Channel;
 use crate::sign::Signer;
 use crate::smoke_test::SmokeTester;
 use anyhow::Error;
@@ -30,30 +30,21 @@ use github::{CreateTag, Github};
 use serde::Deserialize;
 use tempfile::NamedTempFile;
 
+pub use crate::config::RustcConfig;
+
 const TARGET: &str = env!("TARGET");
 
-struct Context {
+pub struct Context {
     work: PathBuf,
     handle: Easy,
-    config: Config,
+    config: RustcConfig,
     date: String,
     current_version: Option<String>,
     current_cargo_version: Option<String>,
 }
 
-// Called as:
-//
-//  $prog work/dir
-fn main() -> Result<(), Error> {
-    let mut context = Context::new(
-        env::current_dir()?.join(env::args_os().nth(1).unwrap()),
-        Config::from_env()?,
-    )?;
-    context.run()
-}
-
 impl Context {
-    fn new(work: PathBuf, config: Config) -> Result<Self, Error> {
+    pub fn new(work: PathBuf, config: RustcConfig) -> Result<Self, Error> {
         let date = Utc::now().format("%Y-%m-%d").to_string();
 
         // Configure the right amount of Rayon threads.
@@ -71,7 +62,7 @@ impl Context {
         })
     }
 
-    fn run(&mut self) -> Result<(), Error> {
+    pub fn run(&mut self) -> Result<(), Error> {
         let _lock = self.lock()?;
         match self.config.action {
             config::Action::PromoteRelease => self.do_release()?,

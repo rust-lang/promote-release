@@ -16,7 +16,7 @@ use std::{
     time::Instant,
 };
 
-use crate::config::Config;
+use crate::config::RustcConfig;
 
 pub(crate) struct Signer {
     gpg_key: SignedSecretKey,
@@ -35,7 +35,7 @@ impl Signer {
         })
     }
 
-    pub(crate) fn new(config: &Config) -> Result<Self, Error> {
+    pub(crate) fn new(config: &RustcConfig) -> Result<Self, Error> {
         Self::new_inner(
             Path::new(&config.gpg_key_file),
             Path::new(&config.gpg_password_file),
