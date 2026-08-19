@@ -8,6 +8,7 @@ mod discourse;
 mod fastly;
 mod github;
 mod recompress;
+pub mod s3;
 mod sign;
 mod smoke_test;
 
@@ -31,6 +32,7 @@ use serde::Deserialize;
 use tempfile::NamedTempFile;
 
 pub use crate::config::RustcConfig;
+use crate::s3::S3Client;
 
 const TARGET: &str = env!("TARGET");
 
@@ -367,13 +369,10 @@ impl Context {
         let _ = fs::remove_dir_all(&dl);
         fs::create_dir_all(&dl)?;
 
-        run(self
-            .aws_s3()
-            .arg("cp")
-            .arg("--recursive")
-            .arg("--only-show-errors")
-            .arg(self.s3_artifacts_url(&format!("{rev}/")))
-            .arg(format!("{}/", dl.display())))?;
+        self.aws_s3_client().download(
+            &self.s3_artifacts_url(&format!("{rev}/")),
+            &format!("{}/", dl.display()),
+        )?;
 
         let mut files = dl.read_dir()?;
         if files.next().is_none() {
@@ -996,6 +995,10 @@ It was created automatically by the `promote-release` tool."#,
 
         cmd.arg("s3");
         cmd
+    }
+
+    fn aws_s3_client(&self) -> S3Client {
+        S3Client::new(self.config.s3_endpoint_url.clone())
     }
 
     fn aws_s3api(&self) -> Command {
