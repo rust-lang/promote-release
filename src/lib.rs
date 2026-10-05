@@ -893,12 +893,36 @@ impl Context {
             };
 
             let mut token = github.token(repository_for_blog)?;
-            let blog_repo = token.repository()?;
+
+            // Open a PR, to have audit trail for the post, and also so that we don't have to go
+            // around branch protections and the merge queue.
+            let branch = format!("{version}-prerelease-blog-post");
+
+            // Step 1: figure out main branch SHA
+            let base_sha = token.get_ref("main")?;
+
+            // Step 2: create branch to push to
+            token.create_ref(&branch, &base_sha)?;
+
+            // Step 3: push the post to the branch
             token.create_file(
-                &blog_repo.default_branch,
+                &branch,
                 &format!("content/inside-rust/{version}-prerelease.md"),
                 &blog_contents,
             )?;
+
+            // Step 4: open a PR from the branch
+            let pr = token.create_pr(
+                "main",
+                &branch,
+                &format!("Pre-release testing post for {version}"),
+                r#"This PR contains pre-release testing announcement for Rust release {version}.
+
+It was created automatically by the `promote-release` tool."#,
+            )?;
+
+            // Step 5: merge the PR
+            token.merge_pr(pr)?;
         } else if let Some(pr) = self.config.blog_pr {
             let mut token = github.token(repository_for_blog)?;
 
