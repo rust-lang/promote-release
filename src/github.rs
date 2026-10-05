@@ -4,7 +4,7 @@ use base64::prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD, Engine as _};
 use curl::easy::Easy;
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use sha2::Digest;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 pub(crate) struct Github {
     key: rsa::RsaPrivateKey,
@@ -318,15 +318,14 @@ impl RepositoryClient<'_> {
         Ok(())
     }
 
-    // This isn't currently used but might be again in the future, for now just leave it in place.
-    #[allow(unused)]
+    /// Create a pull request and return its number.
     pub(crate) fn create_pr(
         &mut self,
         base: &str,
         head: &str,
         title: &str,
         body: &str,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<u32> {
         #[derive(serde::Serialize)]
         struct Request<'a> {
             head: &'a str,
@@ -340,15 +339,22 @@ impl RepositoryClient<'_> {
             "https://api.github.com/repos/{repository}/pulls",
             repository = self.repo,
         ))?;
-        self.client
+
+        #[derive(serde::Deserialize)]
+        struct Response {
+            number: u32,
+        }
+
+        let response = self
+            .client
             .with_body(Request {
                 base,
                 head,
                 title,
                 body,
             })
-            .send()?;
-        Ok(())
+            .send_with_response::<Response>()?;
+        Ok(response.number)
     }
 
     /// Returns the last bors merge commit (SHA) which involved changes to the passed file path.
@@ -431,29 +437,83 @@ impl RepositoryClient<'_> {
         self.start_new_request()?;
         self.client.put(true)?;
         self.client.url(&format!(
-            "https://api.github.com/repos/{repo}/pulls/{pr}/merge",
+            "https://api.github.com/repos/{repo}/pulls/{pr}/merge-async",
             repo = self.repo,
         ))?;
 
-        #[derive(Default, Debug, serde::Deserialize)]
-        // Fields are intentionally used for Debug.
-        #[allow(dead_code)]
-        #[serde(default)]
-        struct MergePrResponse {
-            sha: String,
-            merged: bool,
-            message: String,
+        #[derive(Debug, serde::Deserialize)]
+        struct Details {
+            #[serde(default)]
+            uuid: Option<String>,
         }
 
+        #[derive(Debug, serde::Deserialize)]
+        struct MergePrResponse {
+            status: String,
+            details: Details,
+        }
+
+        // Asynchronously initialized the merge
         let resp = self
             .client
             .without_body()
             .send_with_response::<MergePrResponse>()?;
-        if resp.merged {
-            Ok(())
-        } else {
-            anyhow::bail!("Failed to merge {} PR #{}: {:?}", self.repo, pr, resp);
+        let uuid = match resp.status.as_str() {
+            "merged" | "enqueued" => {
+                println!("PR #{pr} has already been merged or enqueued to the merge queue");
+                return Ok(());
+            }
+            "pending" => {
+                let Some(uuid) = resp.details.uuid else {
+                    return Err(anyhow::anyhow!(
+                        "Cannot get merge UUID for {} PR #{pr}: ({resp:?})",
+                        self.repo
+                    ));
+                };
+                uuid
+            }
+            status => {
+                return Err(anyhow::anyhow!(
+                    "Failed to merge {} PR #{pr}: {status} ({resp:?})",
+                    self.repo
+                ));
+            }
+        };
+
+        // Wait until the merge is complete
+        for _ in 0..100 {
+            self.start_new_request()?;
+            self.client.get(true)?;
+            self.client.url(&format!(
+                "https://api.github.com/repos/{repo}/pulls/{pr}/merge-async/{uuid}",
+                repo = self.repo,
+            ))?;
+            let resp = self
+                .client
+                .without_body()
+                .send_with_response::<MergePrResponse>()?;
+            match resp.status.as_str() {
+                "merged" => {
+                    println!("PR #{pr} has been merged");
+                    return Ok(());
+                }
+                "pending" | "enqueued" => {
+                    println!("PR #{pr} is waiting to be merged, sleeping for 10s");
+                    std::thread::sleep(Duration::from_secs(10));
+                    continue;
+                }
+                status => {
+                    return Err(anyhow::anyhow!(
+                        "Failed to merge {} PR #{pr}: {status} ({resp:?})",
+                        self.repo
+                    ));
+                }
+            }
         }
+        Err(anyhow::anyhow!(
+            "Timed out waiting for merge of {} PR #{pr}",
+            self.repo
+        ))
     }
 
     /// Retrieve the last github pages deployed SHA
