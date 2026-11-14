@@ -2,6 +2,7 @@
 
 mod branching;
 mod build_manifest;
+pub mod cloudfront;
 mod config;
 mod curl_helper;
 mod discourse;
@@ -27,12 +28,15 @@ use anyhow::Error;
 use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
-use github::{CreateTag, Github};
+use github::CreateTag;
 use serde::Deserialize;
 use tempfile::NamedTempFile;
 
+use crate::cloudfront::invalidate_cloudfront;
 pub use crate::config::RustcConfig;
-use crate::s3::S3Client;
+pub use crate::s3::S3Client;
+pub use config::{bool_env, default_env, require_env};
+pub use github::Github;
 
 const TARGET: &str = env!("TARGET");
 
@@ -371,7 +375,7 @@ impl Context {
 
         self.aws_s3_client().download(
             &self.s3_artifacts_url(&format!("{rev}/")),
-            &format!("{}/", dl.display()),
+            Path::new(&format!("{}/", dl.display())),
         )?;
 
         let mut files = dl.read_dir()?;
@@ -607,27 +611,7 @@ impl Context {
             return Ok(());
         }
 
-        let json = serde_json::json!({
-            "Paths": {
-                "Items": paths,
-                "Quantity": paths.len(),
-            },
-            "CallerReference": format!("rct-{}", rand::random::<u64>()),
-        })
-        .to_string();
-        let dst = self.work.join("payload.json");
-        std::fs::write(&dst, json.as_bytes())?;
-
-        let mut cmd = Command::new("aws");
-        run(cmd
-            .arg("cloudfront")
-            .arg("create-invalidation")
-            .arg("--invalidation-batch")
-            .arg(format!("file://{}", dst.display()))
-            .arg("--distribution-id")
-            .arg(distribution_id))?;
-
-        Ok(())
+        invalidate_cloudfront(&self.work, distribution_id, paths)
     }
 
     fn invalidate_fastly(&self, paths: &[String]) -> Result<(), Error> {

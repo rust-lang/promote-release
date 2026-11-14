@@ -1,5 +1,6 @@
 use crate::run;
 use anyhow::Context;
+use std::path::Path;
 use std::process::Command;
 
 pub struct S3Client {
@@ -24,8 +25,8 @@ impl S3Client {
         cmd
     }
 
-    /// Download data from S3.
-    pub fn download(&self, s3_url: &str, local_path: &str) -> anyhow::Result<()> {
+    /// Download data from S3 into a local directory.
+    pub fn download(&self, s3_url: &str, local_path: &Path) -> anyhow::Result<()> {
         run(self
             .cmd()
             .arg("cp")
@@ -34,6 +35,19 @@ impl S3Client {
             .arg(s3_url)
             .arg(local_path))
         .context("Cannot download from S3")?;
+        Ok(())
+    }
+
+    /// Upload data from a local directory to a S3 bucket.
+    pub fn upload(&self, local_path: &Path, s3_url: &str) -> anyhow::Result<()> {
+        run(self
+            .cmd()
+            .arg("cp")
+            .arg("--recursive")
+            .arg("--only-show-errors")
+            .arg(local_path)
+            .arg(s3_url))
+        .context("Cannot upload to S3")?;
         Ok(())
     }
 }
