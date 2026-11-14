@@ -6,20 +6,20 @@ use rsa::pkcs1::DecodeRsaPrivateKey;
 use sha2::Digest;
 use std::time::{Duration, SystemTime};
 
-pub(crate) struct Github {
+pub struct Github {
     key: rsa::RsaPrivateKey,
     id: u32,
     client: Easy,
 }
 
-pub(crate) struct RepositoryClient<'a> {
+pub struct RepositoryClient<'a> {
     client: &'a mut Easy,
     repo: String,
-    token: String,
+    token: Option<String>,
 }
 
 impl Github {
-    pub(crate) fn new(key: &str, id: u32) -> Github {
+    pub fn new(key: &str, id: u32) -> Github {
         Github {
             key: rsa::RsaPrivateKey::from_pkcs1_pem(key).unwrap(),
             id,
@@ -70,7 +70,15 @@ impl Github {
         Ok(())
     }
 
-    pub(crate) fn token(&mut self, repository: &str) -> anyhow::Result<RepositoryClient<'_>> {
+    pub fn unauthenticated(&mut self, repository: &str) -> RepositoryClient<'_> {
+        RepositoryClient {
+            client: &mut self.client,
+            repo: repository.to_string(),
+            token: None,
+        }
+    }
+
+    pub fn token(&mut self, repository: &str) -> anyhow::Result<RepositoryClient<'_>> {
         self.start_jwt_request()?;
         self.client.get(true)?;
         self.client.url(&format!(
@@ -103,7 +111,7 @@ impl Github {
         Ok(RepositoryClient {
             client: &mut self.client,
             repo: repository.to_owned(),
-            token,
+            token: Some(token),
         })
     }
 }
@@ -117,7 +125,7 @@ impl RepositoryClient<'_> {
     ) -> RepositoryClient<'a> {
         RepositoryClient {
             client,
-            token: token.to_owned(),
+            token: Some(token.to_owned()),
             repo: repository.to_owned(),
         }
     }
@@ -125,9 +133,11 @@ impl RepositoryClient<'_> {
     fn start_new_request(&mut self) -> anyhow::Result<()> {
         self.client.reset();
         self.client.useragent("rust-lang/promote-release")?;
-        let mut headers = curl::easy::List::new();
-        headers.append(&format!("Authorization: token {}", self.token))?;
-        self.client.http_headers(headers)?;
+        if let Some(token) = self.token.as_deref() {
+            let mut headers = curl::easy::List::new();
+            headers.append(&format!("Authorization: token {token}"))?;
+            self.client.http_headers(headers)?;
+        }
         Ok(())
     }
 
@@ -184,7 +194,7 @@ impl RepositoryClient<'_> {
     }
 
     /// Returns the SHA of the tip of this ref, if it exists.
-    pub(crate) fn get_ref(&mut self, name: &str) -> anyhow::Result<String> {
+    pub fn get_ref(&mut self, name: &str) -> anyhow::Result<String> {
         // This mostly exists to make sure the request is successful rather than
         // really checking the created ref (which we already know).
         #[derive(serde::Deserialize)]

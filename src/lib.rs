@@ -2,12 +2,14 @@
 
 mod branching;
 mod build_manifest;
+pub mod cloudfront;
 mod config;
 mod curl_helper;
 mod discourse;
 mod fastly;
 mod github;
 mod recompress;
+pub mod s3;
 mod sign;
 mod smoke_test;
 
@@ -26,11 +28,15 @@ use anyhow::Error;
 use chrono::Utc;
 use curl::easy::Easy;
 use fs2::FileExt;
-use github::{CreateTag, Github};
+use github::CreateTag;
 use serde::Deserialize;
 use tempfile::NamedTempFile;
 
+use crate::cloudfront::invalidate_cloudfront;
 pub use crate::config::RustcConfig;
+pub use crate::s3::S3Client;
+pub use config::{bool_env, default_env, require_env};
+pub use github::Github;
 
 const TARGET: &str = env!("TARGET");
 
@@ -367,13 +373,10 @@ impl Context {
         let _ = fs::remove_dir_all(&dl);
         fs::create_dir_all(&dl)?;
 
-        run(self
-            .aws_s3()
-            .arg("cp")
-            .arg("--recursive")
-            .arg("--only-show-errors")
-            .arg(self.s3_artifacts_url(&format!("{rev}/")))
-            .arg(format!("{}/", dl.display())))?;
+        self.aws_s3_client().download(
+            &self.s3_artifacts_url(&format!("{rev}/")),
+            Path::new(&format!("{}/", dl.display())),
+        )?;
 
         let mut files = dl.read_dir()?;
         if files.next().is_none() {
@@ -608,27 +611,7 @@ impl Context {
             return Ok(());
         }
 
-        let json = serde_json::json!({
-            "Paths": {
-                "Items": paths,
-                "Quantity": paths.len(),
-            },
-            "CallerReference": format!("rct-{}", rand::random::<u64>()),
-        })
-        .to_string();
-        let dst = self.work.join("payload.json");
-        std::fs::write(&dst, json.as_bytes())?;
-
-        let mut cmd = Command::new("aws");
-        run(cmd
-            .arg("cloudfront")
-            .arg("create-invalidation")
-            .arg("--invalidation-batch")
-            .arg(format!("file://{}", dst.display()))
-            .arg("--distribution-id")
-            .arg(distribution_id))?;
-
-        Ok(())
+        invalidate_cloudfront(&self.work, distribution_id, paths)
     }
 
     fn invalidate_fastly(&self, paths: &[String]) -> Result<(), Error> {
@@ -996,6 +979,10 @@ It was created automatically by the `promote-release` tool."#,
 
         cmd.arg("s3");
         cmd
+    }
+
+    fn aws_s3_client(&self) -> S3Client {
+        S3Client::new(self.config.s3_endpoint_url.clone())
     }
 
     fn aws_s3api(&self) -> Command {

@@ -343,23 +343,23 @@ where
         ))?)),
         Err(VarError::NotPresent) => Ok(None),
         Err(VarError::NotUnicode(_)) => {
-            anyhow::bail!("environment variable {} is not unicode!", name)
+            anyhow::bail!("environment variable {name} is not unicode!")
         }
     }
 }
 
-fn require_env<R>(name: &str) -> Result<R, Error>
+pub fn require_env<R>(name: &str) -> Result<R, Error>
 where
     R: FromStr,
     Error: From<R::Err>,
 {
     match maybe_env(name)? {
         Some(res) => Ok(res),
-        None => anyhow::bail!("missing environment variable {}", name),
+        None => anyhow::bail!("missing environment variable {ENVIRONMENT_VARIABLE_PREFIX}{name}"),
     }
 }
 
-fn default_env<R>(name: &str, default: R) -> Result<R, Error>
+pub fn default_env<R>(name: &str, default: R) -> Result<R, Error>
 where
     R: FromStr,
     Error: From<R::Err>,
@@ -367,6 +367,6 @@ where
     Ok(maybe_env(name)?.unwrap_or(default))
 }
 
-fn bool_env(name: &str) -> Result<bool, Error> {
+pub fn bool_env(name: &str) -> Result<bool, Error> {
     Ok(maybe_env::<String>(name)?.is_some())
 }
