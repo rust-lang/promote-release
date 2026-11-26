@@ -899,7 +899,7 @@ impl Context {
             let branch = format!("{version}-prerelease-blog-post");
 
             // Step 1: figure out main branch SHA
-            let base_sha = token.get_ref("main")?;
+            let base_sha = token.get_ref("heads/main")?;
 
             // Step 2: create branch to push to
             token.create_ref(&branch, &base_sha)?;
