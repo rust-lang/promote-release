@@ -7,7 +7,7 @@
 # then copy the binary from it later in the build.
 FROM pgsty/silo:RELEASE.2026-08-06T00-00-00Z-amd64 AS mc
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential \
@@ -17,6 +17,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     jq \
     python3 \
     unzip \
+    libssl-dev \
     socat
 
 # Install awscli
