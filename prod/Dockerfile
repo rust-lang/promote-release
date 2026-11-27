@@ -39,10 +39,11 @@ RUN find -name "*.rs" -exec touch {} \; && cargo build --release
 #  Output image  #
 ##################
 
-FROM ubuntu:24.04 AS binary
+FROM ubuntu:26.04 AS binary
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential \
+    libssl-dev \
     ca-certificates \
     curl \
     git \
