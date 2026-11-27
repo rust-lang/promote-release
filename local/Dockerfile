@@ -7,7 +7,7 @@
 # then copy the binary from it later in the build.
 FROM pgsty/silo:RELEASE.2026-08-06T00-00-00Z-amd64 AS mc
 
-FROM ubuntu:26.04
+FROM ubuntu:24.04
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential \
